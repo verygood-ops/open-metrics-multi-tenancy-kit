@@ -8,6 +8,11 @@ It introspects Prometheus GRPC metrics `remote_write` stream,
 injects tenants in accordance to https://cortexmetrics.io/docs/guides/auth/,
 and forwards requests to specified upstream.
 
+How it works
+------------
+<img src='https://g.gravizo.com/svg?
+%40startuml%3B%0A%0Aactor%20DevOps%3B%0Aparticipant%20%22Prometheus%20Exporters%22%20as%20E%3B%0Aparticipant%20%22Prometheus%22%20as%20P%3B%0Aparticipant%20%22Open%20Metrics%20Proxy%22%20as%20O%3B%0Aparticipant%20%22Cortex%22%20as%20C%3B%0A%0AE%20-%3E%20P%3A%20%22Receive%20Metrics%22%3B%0AP%20-%3E%20O%3A%20%22Prometheus%20Remote%20Write%20send%22%3B%0AO%20-%3E%20O%3A%20%22Repack%20metrics%20tenant-wise%22%3B%0AO%20-%3E%20C%3A%20%22Send%20repacked%20metrics%20with%20X-Scope-OrgID%22%3B%0A%40enduml
+'>
 
 How to build
 -------------
