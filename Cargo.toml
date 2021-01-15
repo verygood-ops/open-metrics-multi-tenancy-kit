@@ -1,0 +1,24 @@
+[package]
+name = "open-metrics-multi-tenancy-proxy"
+version = "0.0.1"
+authors = ["Very Good Security, Inc <dev@verygoodsecurity.com>"]
+edition = "2018"
+include = ["src/**/*", "src/proto/**/*", "Cargo.toml"]
+
+[dependencies]
+argh = "0.1.3"
+bytes = "1.0.1"
+env_logger = "0.8.2"
+futures = "0.3"
+log = "0.4"
+protobuf = { version = "2", features = ["with-bytes"] }
+reqwest = "0.10.10"
+snap = "1"
+hyper = "0.13.4"
+spin = "0.7.1"
+tokio = { version = "0.2.22", features = ["full"] }
+tokio-compat = "0.1.6"
+warp = "0.2.5"
+
+[build-dependencies]
+protoc-rust = "2.0"
