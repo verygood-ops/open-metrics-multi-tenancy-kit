@@ -2,7 +2,8 @@ FROM quay.io/verygoodsecurity/rust-musl-builder:1.49.0 AS builder
 ARG CARGO_ARGS="--release"
 
 RUN rustup target add x86_64-unknown-linux-musl
-COPY Cargo.lock Cargo.lock
+ADD --chown=rust:rust build.rs build.rs
+ADD --chown=rust:rust Cargo.lock Cargo.lock
 ADD --chown=rust:rust Cargo.toml Cargo.toml
 ADD --chown=rust:rust src/ src/
 ADD --chown=rust:rust config config/
