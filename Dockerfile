@@ -1,4 +1,4 @@
-FROM ekidd/rust-musl-builder:1.49.0 AS builder
+FROM quay.io/verygoodsecurity/rust-musl-builder:1.49.0 AS builder
 ARG CARGO_ARGS="--release"
 
 RUN rustup target add x86_64-unknown-linux-musl
