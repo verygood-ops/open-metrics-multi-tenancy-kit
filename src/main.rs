@@ -1,6 +1,7 @@
 #![deny(warnings)]
 
 use std::convert::Infallible;
+use std::net::Ipv4Addr;
 
 use argh::FromArgs;
 use env_logger;
@@ -14,15 +15,20 @@ mod metrics;
 mod proto;
 
 use forward::forward::process_proxy_payload;
+use std::process::exit;
 
 
 #[derive(FromArgs)]
 /// Open Metrics multi tenancy Proxy
 struct OpenMetricsProxyArgs {
 
-    /// port for serving http (defaul 19093)
+    /// port for serving http (default 19093)
     #[argh(option, default = "default_port()")]
     port: u16,
+
+    /// port for serving http (default 127.0.0.1)
+    #[argh(option, default = "String::from(\"127.0.0.1\")")]
+    interface: String,
 
     /// max content length allowed to be posted
     #[argh(option, default="default_content_length_limit()")]
@@ -48,7 +54,7 @@ struct OpenMetricsProxyArgs {
 
 // port
 fn default_port() -> u16 {
-    20093
+    19093
 }
 
 // requests per load
@@ -74,6 +80,7 @@ async fn main() {
     let replicate_to_list = args.default_tenant_list.clone().to_owned();
     let ingester_stream_url = args.ingester_upstream_url.clone().to_owned();
     let _parallel_request_per_load = args.max_parallel_request_per_load.clone().to_owned();
+    let interface = args.interface.clone().to_owned();
 
     let tenant_labels = tenant_label_list.split(",").map(|s| s.to_string()).collect();
     let replicate_to = replicate_to_list.split(",").map(|s| s.to_string()).collect();
@@ -123,6 +130,18 @@ async fn main() {
     let health = warp::any().and(warp::get())
         .map(|| "Up\n");
 
-    warp::serve(health.or(proxy)).run(([127, 0, 0, 1], args.port)).await;
+    let listen_addr = interface.parse::<Ipv4Addr>();
 
+    let exit_code = match listen_addr {
+        Ok(ip) => {
+            warp::serve(health.or(proxy)).run((ip, args.port)).await;
+            0
+        },
+        Err(e) => {
+            error!("Invalid IP address: {}, err={}", interface, e);
+            2
+        }
+    };
+
+    exit(exit_code);
 }
