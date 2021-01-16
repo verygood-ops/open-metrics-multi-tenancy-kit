@@ -6,6 +6,7 @@ COPY Cargo.lock Cargo.lock
 ADD --chown=rust:rust Cargo.toml Cargo.toml
 ADD --chown=rust:rust src/ src/
 ADD --chown=rust:rust config config/
+RUN cargo build
 RUN cargo install --target x86_64-unknown-linux-musl --path=.
 
 FROM debian:buster-slim
