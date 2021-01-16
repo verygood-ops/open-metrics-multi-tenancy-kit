@@ -178,8 +178,10 @@ async fn accumulate_errors(acc: u16, result: Result<u16,u16>) -> u16   {
         acc + 1
     }
     else {
-        if result.unwrap().to_string().starts_with("2") {
+        let code_string = result.unwrap().to_string();
+        if code_string.starts_with("2") || code_string.starts_with("4") {
             // 2xx response
+            // 4xx ignored for dropped samples
             acc
         } else {
             acc + 1

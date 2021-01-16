@@ -4,6 +4,7 @@ version = "0.0.1"
 authors = ["Very Good Security, Inc <dev@verygoodsecurity.com>"]
 edition = "2018"
 include = ["src/**/*", "src/proto/**/*", "Cargo.toml"]
+build = "build.rs"
 
 [dependencies]
 argh = "0.1.3"
