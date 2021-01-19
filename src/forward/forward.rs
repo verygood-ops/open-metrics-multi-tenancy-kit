@@ -2,6 +2,7 @@
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::time::Instant;
 
 use log::debug;
 use protobuf::Message;
@@ -14,6 +15,17 @@ use crate::proto;
 use crate::metrics;
 use metrics::metrics::process_time_serie;
 use proto::prometheus::{MetricMetadata,WriteRequest};
+use prometheus::{CounterVec, Counter, Histogram};
+
+pub enum ForwardingStatistics {
+    NumSeries = 0,
+    NumMetadata = 1,
+    NumLabels = 2,
+    TenantsDetected = 3,
+    TotalRequests = 4,
+    NumFailures = 5,
+    ProcessingTime = 6
+}
 
 
 // unpacks Snappy payload
@@ -25,6 +37,9 @@ pub async fn process_proxy_payload(
     _replicate_to: Vec<String>,
     _ingester_stream_url: String,
     _parallel_request_per_load: u16,
+    _internal_stats: &HashMap<u8, Counter>,
+    _internal_stats_vec: &HashMap<u8, CounterVec>,
+    _internal_stats_histograms: &HashMap<u8,Histogram>,
     _bytes: warp::hyper::body::Bytes
 ) -> Result<impl warp::Reply, Infallible> {
 
@@ -58,16 +73,22 @@ pub async fn process_proxy_payload(
                     StatusCode::BAD_REQUEST))
         };
 
+        let in_ms = Instant::now();
+
         // container for generated requests
         let mut tenant_data = HashMap::<String,WriteRequest>::new();
 
         // statistical values
-        // FIXME: expose via Prometheus
-        let mut num_series: u16 = 0;
-        let mut num_metadata: u16 = 0;
-        let mut num_labels: u64 = 0;
-        let mut tenants_detected: u16 = 0;
-        let mut total_requests: u16 = 0;
+
+        let num_metadata: &Counter = _internal_stats.get(&(ForwardingStatistics::NumMetadata as u8)).unwrap();
+        let num_labels: &Counter = _internal_stats.get(&(ForwardingStatistics::NumLabels as u8)).unwrap();
+        let tenants_detected: &Counter = _internal_stats.get(&(ForwardingStatistics::TenantsDetected as u8)).unwrap();
+        let num_failures: &Counter = _internal_stats.get(&(ForwardingStatistics::NumFailures as u8)).unwrap();
+
+        let num_series: &CounterVec = _internal_stats_vec.get(&(ForwardingStatistics::NumSeries as u8)).unwrap();
+        let total_requests: &CounterVec = _internal_stats_vec.get(&(ForwardingStatistics::TotalRequests as u8)).unwrap();
+
+        let histogram: &Histogram = _internal_stats_histograms.get(&(ForwardingStatistics::ProcessingTime as u8)).unwrap();
 
         // aggregate metrics by tenant
         for time_series in write_request.timeseries.into_iter() {
@@ -77,9 +98,8 @@ pub async fn process_proxy_payload(
                 &_replicate_to,
                 &mut tenant_data
             );
-            tenants_detected += tenants;
-            num_labels += labels as u64;
-            num_series += 1;
+            tenants_detected.inc_by(tenants as f64);
+            num_labels.inc_by(labels as f64);
         };
 
         // append metadata for each request
@@ -87,20 +107,14 @@ pub async fn process_proxy_payload(
             for req in tenant_data.values_mut() {
                 req.metadata.push(MetricMetadata::from(metadata.clone()));
             };
-            num_metadata += 1;
+            num_metadata.inc()
         };
 
-        for _ in tenant_data.values_mut() {
-            total_requests += 1;
+        for tenant_id in tenant_data.keys() {
+            total_requests.with_label_values(&[tenant_id.as_str()]).inc();
+            num_series.with_label_values(&[tenant_id.as_str()])
+                .inc_by(tenant_data.get(tenant_id).unwrap().timeseries.len() as f64);
         };
-
-        // log debug metadata
-        debug!("::: request time series : {}", num_series.to_string());
-        debug!("::: request metadata : {}", num_metadata.to_string());
-        debug!("::: request labels : {}", num_labels.to_string());
-        debug!("::: detected tenants from labels : {}", tenants_detected.to_string());
-        debug!("::: forwarded requests: {}", total_requests.to_string());
-        debug!("::: current thread is: {}", std::thread::current().name().unwrap());
 
         let responses = futures::stream::iter(tenant_data.into_iter() ).map(
             | (_tenant_id, tenant_request): (String, WriteRequest) | {
@@ -129,6 +143,8 @@ pub async fn process_proxy_payload(
             .fold(0,accumulate_errors).await;
 
         debug!("number of errors while processing: {}", num_of_failures);
+        num_failures.inc_by(num_of_failures as f64);
+        histogram.observe(in_ms.elapsed().as_millis() as f64);
 
         // determine processing status
         let expose_as = if num_of_failures == 0

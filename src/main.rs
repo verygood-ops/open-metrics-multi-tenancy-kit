@@ -1,11 +1,12 @@
 #![deny(warnings)]
-
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::Ipv4Addr;
 
 use argh::FromArgs;
 use env_logger;
 use log::error;
+use prometheus::{Counter, CounterVec, Histogram, Opts, Registry, TextEncoder, Encoder, register_histogram};
 use reqwest::header::HeaderValue;
 use warp::Filter;
 use warp::log as http_log;
@@ -14,6 +15,7 @@ mod forward;
 mod metrics;
 mod proto;
 
+use forward::forward::ForwardingStatistics;
 use forward::forward::process_proxy_payload;
 use std::process::exit;
 
@@ -76,6 +78,7 @@ async fn main() {
 
     let args: OpenMetricsProxyArgs = argh::from_env();
 
+    // Shared variables
     let tenant_label_list = args.tenant_label_list.clone().to_owned();
     let replicate_to_list = args.default_tenant_list.clone().to_owned();
     let ingester_stream_url = args.ingester_upstream_url.clone().to_owned();
@@ -97,12 +100,74 @@ async fn main() {
         .http1_title_case_headers()
         .build().unwrap();
 
+    let r = Registry::new();
+
+    // Prometheus metrics
+    let num_series_opts = Opts::new("open_metrics_proxy_series", "number of series");
+    let num_series = CounterVec::new(num_series_opts, &["tenant_id"]).unwrap();
+    r.register(Box::new(num_series.clone())).unwrap();
+
+    let total_requests_opts = Opts::new("open_metrics_proxy_requests", "number of series");
+    let total_requests = CounterVec::new(total_requests_opts, &["tenant_id"]).unwrap();
+    r.register(Box::new(total_requests.clone())).unwrap();
+
+    let num_failures_opts = Opts::new("open_metrics_proxy_failures", "number of series");
+    let num_failures = Counter::with_opts(num_failures_opts).unwrap();
+    r.register(Box::new(num_failures.clone())).unwrap();
+
+    let num_labels_opts = Opts::new("open_metrics_proxy_labels", "labels detected");
+    let num_labels = Counter::with_opts(num_labels_opts).unwrap();
+    r.register(Box::new(num_labels.clone())).unwrap();
+
+    let tenants_detected_opts = Opts::new("open_metrics_proxy_tenants", "tenants detetcted");
+    let tenants_detected = Counter::with_opts(tenants_detected_opts).unwrap();
+    r.register(Box::new(tenants_detected.clone())).unwrap();
+
+    let num_metadata_opts = Opts::new("open_metrics_proxy_metadata", "number of metadata");
+    let num_metadata = Counter::with_opts(num_metadata_opts).unwrap();
+    r.register(Box::new(num_metadata.clone())).unwrap();
+
+    let histogram = register_histogram!("open_metrics_proxy_processing_ms",
+                                "processing time milliseconds",
+                                vec![10.0, 50.0, 100.0, 250.0, 500.0, 800.0, 1200.0, 2000.0]).unwrap();
+    r.register(Box::new(histogram.clone())).unwrap();
+
+    let mut counter_vecs = HashMap::<u8,CounterVec>::new();
+    counter_vecs.insert(ForwardingStatistics::TotalRequests as u8, total_requests);
+    counter_vecs.insert(ForwardingStatistics::NumSeries as u8, num_series);
+
+    let mut counters = HashMap::<u8,Counter>::new();
+    counters.insert(ForwardingStatistics::NumFailures as u8, num_failures);
+    counters.insert(ForwardingStatistics::NumLabels as u8, num_labels);
+    counters.insert(ForwardingStatistics::TenantsDetected as u8, tenants_detected);
+    counters.insert(ForwardingStatistics::NumMetadata as u8, num_metadata);
+
+    let mut histograms = HashMap::<u8,Histogram>::new();
+    histograms.insert(ForwardingStatistics::ProcessingTime as u8, histogram);
+
+
     fn with_parameter_vec(param_vec: Vec<String>) -> impl Filter<Extract = (Vec<String>,), Error = Infallible> + Clone {
         warp::any().map(move || param_vec.clone())
     };
 
     fn with_ingester_url(ingester_url: String) -> impl Filter<Extract = (String,), Error = Infallible> + Clone {
         warp::any().map(move || ingester_url.clone())
+    }
+
+    fn with_counters(__counters: HashMap<u8,Counter>) -> impl Filter<Extract = (HashMap<u8,Counter>,), Error = Infallible> + Clone {
+        warp::any().map(move || __counters.clone())
+    }
+
+    fn with_counters_vec(__counter_vecs: HashMap<u8,CounterVec>) -> impl Filter<Extract = (HashMap<u8,CounterVec>,), Error = Infallible> + Clone {
+        warp::any().map(move || __counter_vecs.clone())
+    }
+
+    fn with_histograms(__histograms: HashMap<u8,Histogram>) -> impl Filter<Extract = (HashMap<u8,Histogram>,), Error = Infallible> + Clone {
+        warp::any().map(move || __histograms.clone())
+    }
+
+    fn with_registry(__r: Registry) -> impl Filter<Extract = (Registry,), Error = Infallible> + Clone {
+        warp::any().map(move || __r.clone())
     }
 
     // match any post request and perform proxying
@@ -112,14 +177,20 @@ async fn main() {
         .and(with_parameter_vec(tenant_labels))
         .and(with_parameter_vec(replicate_to))
         .and(with_ingester_url(ingester_stream_url))
+        .and(with_counters(counters))
+        .and(with_counters_vec(counter_vecs))
+        .and(with_histograms(histograms))
         .and(warp::body::bytes()).and_then(
-        move |_client,_tenant_labels,_replicate_to,_ingester_stream_url,_bytes| async move {
+        move |_client,_tenant_labels,_replicate_to,_ingester_stream_url,_counters,_counter_vecs,_histograms,_bytes| async move {
             process_proxy_payload(
                 _client,
                 _tenant_labels,
                 _replicate_to,
                 _ingester_stream_url,
                 _parallel_request_per_load,
+                &_counters,
+                &_counter_vecs,
+                &_histograms,
                 _bytes
             ).await
                 .and_then(|response| Ok(response))
@@ -130,11 +201,23 @@ async fn main() {
     let health = warp::any().and(warp::get())
         .map(|| "Up\n");
 
+    let metrics = warp::path!("metrics").and(warp::get()).and(with_registry(r))
+        .map(|_r: Registry| {
+        // Gather the metrics.
+        let mut buffer = vec![];
+        let encoder = TextEncoder::new();
+        let metric_families = _r.gather();
+        encoder.encode(&metric_families, &mut buffer).unwrap();
+
+        // Output to http body
+        String::from_utf8(buffer).unwrap()
+    });
+
     let listen_addr = interface.parse::<Ipv4Addr>();
 
     let exit_code = match listen_addr {
         Ok(ip) => {
-            warp::serve(health.or(proxy)).run((ip, args.port)).await;
+            warp::serve(metrics.or(health).or(proxy)).run((ip, args.port)).await;
             0
         },
         Err(e) => {

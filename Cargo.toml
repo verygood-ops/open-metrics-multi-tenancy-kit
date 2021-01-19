@@ -12,6 +12,7 @@ bytes = "1.0.1"
 env_logger = "0.8.2"
 futures = "0.3"
 log = "0.4"
+prometheus = "0.11.0"
 protobuf = { version = "2", features = ["with-bytes"] }
 reqwest = "0.10.10"
 snap = "1"

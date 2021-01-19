@@ -1,13 +1,17 @@
 FROM quay.io/verygoodsecurity/rust-musl-builder:1.49.0 AS builder
-ARG CARGO_ARGS="--release"
+ARG CARGO_BUILD_ARGS="--release"
+USER root
+RUN apt-get update
+RUN apt-get -y install protobuf-compiler
+USER rust
 
-RUN rustup target add x86_64-unknown-linux-musl
+
 ADD --chown=rust:rust build.rs build.rs
 ADD --chown=rust:rust Cargo.lock Cargo.lock
 ADD --chown=rust:rust Cargo.toml Cargo.toml
 ADD --chown=rust:rust src/ src/
 ADD --chown=rust:rust config config/
-RUN cargo build
+RUN cargo build ${CARGO_BUILD_ARGS}
 RUN cargo install --target x86_64-unknown-linux-musl --path=.
 
 FROM debian:buster-slim
