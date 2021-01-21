@@ -34,6 +34,8 @@ pub enum ForwardingStatistics {
 pub async fn process_proxy_payload(
     _client: reqwest::Client,
     _tenant_labels: Vec<String>,
+    _allow_listed_tenants: Vec<String>,
+    _does_allow_list: bool,
     _replicate_to: Vec<String>,
     _ingester_stream_url: String,
     _parallel_request_per_load: u16,
@@ -95,6 +97,8 @@ pub async fn process_proxy_payload(
             let (tenants, labels) = process_time_serie(
                 &time_series,
                 &_tenant_labels,
+                &_allow_listed_tenants,
+                _does_allow_list,
                 &_replicate_to,
                 &mut tenant_data
             );

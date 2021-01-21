@@ -50,7 +50,11 @@ struct OpenMetricsProxyArgs {
 
     /// maximum number of requests per single payload to invoke in parallel
     #[argh(option, default="default_parallel_requests_per_load()")]
-    max_parallel_request_per_load: u16
+    max_parallel_request_per_load: u16,
+
+    /// allow listed tenants (optional, by default proxy all tenants)
+    #[argh(option, default="String::from(\"\")")]
+    allow_listed_tenants: String,
 
 }
 
@@ -81,12 +85,22 @@ async fn main() {
     // Shared variables
     let tenant_label_list = args.tenant_label_list.clone().to_owned();
     let replicate_to_list = args.default_tenant_list.clone().to_owned();
+    let tenant_allow_list = args.allow_listed_tenants.clone().to_owned();
     let ingester_stream_url = args.ingester_upstream_url.clone().to_owned();
     let _parallel_request_per_load = args.max_parallel_request_per_load.clone().to_owned();
     let interface = args.interface.clone().to_owned();
 
     let tenant_labels = tenant_label_list.split(",").map(|s| s.to_string()).collect();
-    let replicate_to = replicate_to_list.split(",").map(|s| s.to_string()).collect();
+    let replicate_to: Vec<String> = replicate_to_list.split(",").map(|s| s.to_string()).collect();
+
+    let allowed_tenants: Vec<String> = tenant_allow_list.split(",").map(|s| s.to_string()).collect();
+    let uses_allow_listing = !allowed_tenants.clone().is_empty();
+
+    let allow_listed_tenants = if uses_allow_listing {
+        replicate_to.to_vec().into_iter().chain(allowed_tenants.into_iter()).collect()
+    } else {
+        allowed_tenants
+    };
 
     let mut headers = reqwest::header::HeaderMap::new();
 
@@ -145,6 +159,9 @@ async fn main() {
     let mut histograms = HashMap::<u8,Histogram>::new();
     histograms.insert(ForwardingStatistics::ProcessingTime as u8, histogram);
 
+    fn with_parameter_bool(param_bool: bool) -> impl Filter<Extract = (bool,), Error = Infallible> + Clone {
+        warp::any().map(move || param_bool.clone())
+    };
 
     fn with_parameter_vec(param_vec: Vec<String>) -> impl Filter<Extract = (Vec<String>,), Error = Infallible> + Clone {
         warp::any().map(move || param_vec.clone())
@@ -170,21 +187,34 @@ async fn main() {
         warp::any().map(move || __r.clone())
     }
 
+
     // match any post request and perform proxying
     let proxy = warp::any().and(warp::post())
         .and(warp::body::content_length_limit(args.content_length_limit))
         .map(move || client.clone())
         .and(with_parameter_vec(tenant_labels))
+        .and(with_parameter_vec(allow_listed_tenants))
+        .and(with_parameter_bool(uses_allow_listing))
         .and(with_parameter_vec(replicate_to))
         .and(with_ingester_url(ingester_stream_url))
         .and(with_counters(counters))
         .and(with_counters_vec(counter_vecs))
         .and(with_histograms(histograms))
         .and(warp::body::bytes()).and_then(
-        move |_client,_tenant_labels,_replicate_to,_ingester_stream_url,_counters,_counter_vecs,_histograms,_bytes| async move {
+        move
+            |
+                _client,_tenant_labels,_allow_listed_tenants,
+                _uses_allow_listing,
+                _replicate_to,_ingester_stream_url,
+                _counters,_counter_vecs,
+                _histograms,_bytes
+            | async move {
+
             process_proxy_payload(
                 _client,
                 _tenant_labels,
+                _allow_listed_tenants,
+                _uses_allow_listing,
                 _replicate_to,
                 _ingester_stream_url,
                 _parallel_request_per_load,

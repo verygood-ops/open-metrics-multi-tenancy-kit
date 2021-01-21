@@ -14,7 +14,7 @@ ADD --chown=rust:rust config config/
 RUN cargo build ${CARGO_BUILD_ARGS}
 RUN cargo install --target x86_64-unknown-linux-musl --path=.
 
-FROM debian:buster-slim
+FROM quay.io/verygoodsecurity/debian:buster-slim
 RUN apt-get -y update && apt-get -y install libssl1.1
 COPY --from=builder /home/rust/.cargo/bin/open-metrics-multi-tenancy-proxy /usr/bin/open-metrics-multi-tenancy-proxy
 ENTRYPOINT ["/usr/bin/open-metrics-multi-tenancy-proxy"]
