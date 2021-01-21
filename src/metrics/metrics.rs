@@ -67,7 +67,10 @@ pub fn process_time_serie(
             if label_tenants.contains(tenant_id) && !visited_tenants.contains(tenant_id) {
                 process_time_serie_for_tenant(time_series, tenant_id, tenant_data, &mut visited_tenants);
             };
-        }
+        };
+        for tenant_id in replicate_to.iter() {
+            process_time_serie_for_tenant(time_series, tenant_id, tenant_data, &mut visited_tenants);
+        };
     } else {
         let tenants = replicate_to.clone().into_iter()
             .chain(label_tenants.into_iter()).into_iter();
