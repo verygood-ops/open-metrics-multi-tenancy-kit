@@ -94,7 +94,7 @@ async fn main() {
     let replicate_to: Vec<String> = replicate_to_list.split(",").map(|s| s.to_string()).collect();
 
     let allowed_tenants: Vec<String> = tenant_allow_list.split(",").map(|s| s.to_string()).collect();
-    let uses_allow_listing = allowed_tenants.clone().is_empty();
+    let uses_allow_listing = !allowed_tenants.clone().is_empty();
 
     let allow_listed_tenants = if uses_allow_listing {
         replicate_to.to_vec().into_iter().chain(allowed_tenants.into_iter()).collect()
