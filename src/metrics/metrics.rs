@@ -12,6 +12,8 @@ use proto::prometheus::{TimeSeries,WriteRequest};
 pub fn process_time_serie(
     time_series: &TimeSeries,
     tenant_labels: &Vec<String>,
+    allow_listed_tenants: &Vec<String>,
+    does_allow_list: bool,
     replicate_to: &Vec<String>,
     tenant_data: &mut HashMap::<String,WriteRequest>
 ) -> (u16,u16) {
@@ -36,11 +38,17 @@ pub fn process_time_serie(
     // remember visited tenants to avoid duplicate requests
     let mut visited_tenants:Vec<String> = vec![];
 
+    let tenants = if does_allow_list {
+        replicate_to.clone().into_iter()
+            .chain(label_tenants.into_iter()).into_iter()
+    } else {
+        // chain empty vector for type matching
+        allow_listed_tenants.clone().into_iter()
+            .chain(vec![].into_iter()).into_iter()
+    };
     // cycle tenant id vectors
-    let tenants = replicate_to.clone().into_iter()
-        .chain(label_tenants.into_iter());
 
-    for tenant_id in tenants.into_iter() {
+    for tenant_id in tenants {
 
         // create single request for each tenant.
         if !visited_tenants.contains(&tenant_id) {
