@@ -1,17 +1,6 @@
-#[macro_use]
-use crate::controller;
-extern crate serde_derive;
-
+use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-use apiexts::CustomResourceDefinition;
-use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1 as apiexts;
-
-use kube::{
-    api::{Api, ListParams, Meta, Patch, PatchParams, WatchEvent},
-    Client, CustomResource
-};
 
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]

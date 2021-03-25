@@ -1,13 +1,11 @@
-#[macro_use]
 use crate::ingestiontenant;
 use std::collections::HashSet;
 use std::time::Duration;
 
 use kube::{Api,Client};
-use kube::api::{ListParams, ObjectList};
+use kube::api::ListParams;
 use log::{debug,error,info,warn};
 use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
 use tokio::time::interval;
 use once_cell::sync::Lazy;
 
@@ -55,11 +53,6 @@ impl IngestionTenantController {
             self.tenants_vec.push(tenant_id);
         }
         return self
-    }
-
-    // Set k8s client to use.
-    pub fn set_k8s_client(&mut self, k8s_client: Client) {
-        self.k8s_client = Some(k8s_client);
     }
 
     // Add tenant to list of observed ones.
@@ -181,7 +174,7 @@ impl IngestionTenantController {
         (tenants, ingestion_tenants_list.metadata.continue_)
     }
 
-    async fn observe(&mut self, found_tenants: HashSet<String>) {
+    pub fn observe(&mut self, found_tenants: HashSet<String>) {
 
         debug!("number of ingestion tenants found : {}", found_tenants.len());
 
@@ -202,9 +195,9 @@ impl IngestionTenantController {
             };
         }
 
-        //let foos:
-        info!("--- Done observe() ---");
-        debug!("tenants: {}", self.get_tenants().clone().join("/"))
+
+        debug!("--- Done observe(), got {} tenants ---", self.tenants_vec.len());
+
     }
 
     // Get tenants vector to use.
@@ -277,7 +270,7 @@ pub async fn worker() {
             }
             debug!("preparing to write tenants");
             let mut ctrl = CONTROLLER.write().await;
-            ctrl.observe(found_tenants).await;
+            ctrl.observe(found_tenants);
             drop(ctrl);
         }
     };

@@ -1,9 +1,11 @@
-#![deny(errors)]
+#![deny(warnings)]
 extern crate serde_derive;
 
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::Ipv4Addr;
+use std::process::exit;
+use std::sync::Arc;
 
 use argh::FromArgs;
 use env_logger;
@@ -12,6 +14,7 @@ use prometheus::{
     register_histogram, Counter, CounterVec, Encoder, Histogram, Opts, Registry, TextEncoder,
 };
 use reqwest::header::HeaderValue;
+use tokio;
 use warp::log as http_log;
 use warp::Filter;
 
@@ -23,15 +26,11 @@ mod ingestiontenant;
 
 use forward::forward::process_proxy_payload;
 use forward::forward::ForwardingStatistics;
-use controller::controller::IngestionTenantController;
+
 use controller::controller::CONTROLLER;
 use controller::controller::worker;
-use tokio;
-use tokio_compat_02::FutureExt;
-use std::process::exit;
-use std::sync::{Arc,Mutex};
-use once_cell::sync::Lazy;
-use tokio::sync::RwLock;
+
+
 
 #[derive(FromArgs)]
 /// Open Metrics multi tenancy Proxy
@@ -311,7 +310,6 @@ async fn main() {
         });
 
 
-    // this has own scope for write lock releasing
     // init controller parameters
     let mut c = CONTROLLER.write().await;
     c.set_initial_allowed_tenants(allow_listed_tenants)
