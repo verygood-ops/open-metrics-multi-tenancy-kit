@@ -14,6 +14,7 @@ fn process_time_serie_for_tenant(
     if !tenant_data.contains_key(tenant_id) {
         tenant_data.insert(tenant_id.clone(), WriteRequest::new());
     };
+    // it is safe to do unwrap() here, as long as no one is modifying tenant_data in the same time
     let tenant_replication_request = tenant_data.get_mut(tenant_id).unwrap();
 
     // append time series

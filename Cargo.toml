@@ -1,0 +1,7 @@
+[workspace]
+default-members = ["kube-metrics-multi-tenancy-lib", "informer", "proxy"]
+members = [
+    "kube-metrics-multi-tenancy-lib",
+    "informer",
+    "proxy"
+]

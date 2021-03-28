@@ -29,7 +29,7 @@ pub enum ForwardingStatistics {
 
 // unpacks Snappy payload
 // parses Prometheus protobuf structure
-// sends proxied data to upstream
+// sends proxied data to upstreams
 pub async fn process_proxy_payload(
     _client: reqwest::Client,
     _tenant_labels: Vec<String>,
@@ -149,6 +149,8 @@ pub async fn process_proxy_payload(
                     let url = _ingester_stream_url.clone();
 
                     // serialize request
+                    // it is safe to do unwrap: if the original data didn't offend warp limits,
+                    // the replicated data won't offend reqwest limits
                     let tenant_request_serialized = tenant_request.write_to_bytes().unwrap();
                     let tenant_request_compressed = snap::raw::Encoder::new()
                         .compress_vec(&tenant_request_serialized)
@@ -163,7 +165,8 @@ pub async fn process_proxy_payload(
                             .send()
                             .await
                     })
-                }, // keep limitation for number of parallel requests
+                }, // keep limitation for number of parallel requests to not to overload
+                   // distributor backend
             )
             .buffer_unordered(_parallel_request_per_load.into());
 
@@ -172,6 +175,7 @@ pub async fn process_proxy_payload(
             .fold(0, accumulate_errors)
             .await;
 
+        // report errors to prometheus
         debug!("number of errors while processing: {}", num_of_failures);
         num_failures.inc_by(num_of_failures as f64);
         histogram.observe(in_ms.elapsed().as_millis() as f64);
@@ -200,6 +204,7 @@ async fn process_upstream_response(
                 debug!("request failed: {}", res.unwrap_err());
                 Err(400 as u16)
             } else {
+                // it is safe to do unwrap, since is_err() is checked
                 let processing_response = res.unwrap();
                 let status = processing_response.status();
                 Ok(status.as_u16())

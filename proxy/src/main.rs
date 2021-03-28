@@ -22,11 +22,12 @@ mod forward;
 mod metrics;
 mod proto;
 mod controller;
-mod ingestiontenant;
 
+// stream forwarder component
 use forward::forward::process_proxy_payload;
 use forward::forward::ForwardingStatistics;
 
+// controller component
 use controller::controller::CONTROLLER;
 use controller::controller::worker;
 
@@ -132,6 +133,7 @@ async fn main() {
         allowed_tenants
     };
 
+    // reqwest machinery all safe to unwrap since headers are static
     let mut headers = reqwest::header::HeaderMap::new();
 
     // remote write protocol version header
