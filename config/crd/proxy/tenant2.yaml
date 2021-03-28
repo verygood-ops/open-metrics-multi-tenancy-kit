@@ -1,5 +1,5 @@
 apiVersion: "open-metrics.vgs.io/v1"
-kind: "IngestionTenant"
+kind: "MetricsIngestionTenant"
 metadata:
   namespace: default
   name: test2
