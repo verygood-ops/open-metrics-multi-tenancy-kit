@@ -1,13 +1,13 @@
-use crate::ingestiontenant;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use kube::{Api,Client};
-use kube::api::ListParams;
+use kube::Client;
 use log::{debug,error,info,warn};
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use once_cell::sync::Lazy;
+
+use kube_metrics_mutli_tenancy_lib as kube_lib;
 
 // An ingestion controller singleton
 // It is protected by global rw lock, which is acquired for writers
@@ -131,6 +131,7 @@ impl IngestionTenantController {
                 };
 
                 if idx.is_some() {
+                    // It is safe to do unwrap since is_some() was checked
                     let usz_idx = idx.unwrap() as usize;
                     self.tenants_vec.remove(usz_idx);
 
@@ -178,45 +179,6 @@ impl IngestionTenantController {
 
     }
 
-    // Get tenants from k8s.
-    // Return a tuple containing
-    // bool -- status whether successfully refreshed tenants, or there was an error
-    // Vec<String> -- list of tenants ID to be ingested
-    // Option<String> -- optional continue token value
-    pub async fn refresh_ingestion_tenants(&self,
-                                       continue_token: Option<String>) -> (bool, Vec<String>, Option<String>) {
-
-        let client = self.k8s_client.clone().unwrap();
-        // Call Kubernetes to check ingestion tenant resources.
-        let api : Api<ingestiontenant::ingestiontenant::MetricsIngestionTenant> = Api::namespaced(client, &self.namespace);
-        let lp = if continue_token.is_some() {
-            ListParams::default().continue_token(&continue_token.unwrap().clone())
-        } else {
-            ListParams::default()
-        };
-
-        let mut tenants: Vec<String> = Vec::new();
-        let mut continue_ = None;
-
-        let tenants_acquired = match api.list(&lp).await {
-            Ok(tl) => {
-                for i_t in tl.items.into_iter() {
-                    for tenant in i_t.spec.tenants {
-                        tenants.push(tenant.clone());
-                    };
-                };
-                continue_ = tl.metadata.continue_;
-                true
-            },
-            Err(_) => {
-                error!("Failed to get k8s API response!");
-                false
-            }
-        };
-
-        (tenants_acquired, tenants, continue_)
-    }
-
     // Get tenants vector to use.
     pub fn get_tenants(&self) -> &Vec<String> {
         return &self.tenants_vec;
@@ -258,7 +220,10 @@ pub async fn worker() {
 
             let ctrl = CONTROLLER.read().await;
             let (tenants_acquired, tenants_portion, next_token) =
-                ctrl.refresh_ingestion_tenants(None).await;
+                kube_lib::refresh_ingestion_tenants(
+                    ctrl.k8s_client.clone().unwrap(),
+                    None,
+                    &ctrl.namespace).await;
             drop(ctrl);
 
             if !tenants_acquired {
@@ -278,7 +243,11 @@ pub async fn worker() {
                         let token = t.clone();
                         let ctrl = CONTROLLER.read().await;
                         let (tenants_acquired_inner,
-                            tenants_portion, _t) = ctrl.refresh_ingestion_tenants(Some(token)).await;
+                            tenants_portion, _t) = kube_lib::refresh_ingestion_tenants(
+                            ctrl.k8s_client.clone().unwrap(),
+                            Some(token),
+                            &ctrl.namespace
+                        ).await;
                         drop(ctrl);
                         if !tenants_acquired_inner {
                             error!("Failed to acquire tenants from k8s, will retry later.");
