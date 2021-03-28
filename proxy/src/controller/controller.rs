@@ -9,10 +9,13 @@ use tokio::sync::RwLock;
 use tokio::time::interval;
 use once_cell::sync::Lazy;
 
-// ingestion controller singleton
+// An ingestion controller singleton
+// It is protected by global rw lock, which is acquired for writers
+// when doing k8s state change,
+// and for readers on every proxy request.
 pub static CONTROLLER: Lazy<RwLock<IngestionTenantController>> = Lazy::new(|| RwLock::new(IngestionTenantController::new()));
 
-
+// Ingestion controller state
 pub struct IngestionTenantController {
     k8s_poll_ms: u64,
     k8s_client: Option<Client>,
@@ -23,9 +26,10 @@ pub struct IngestionTenantController {
 }
 
 
-// An informer trait
+// An ingestion controller informer trait
 impl IngestionTenantController {
 
+    // Instantiate with empty values.
     pub fn new() -> IngestionTenantController   {
         return IngestionTenantController{
             k8s_poll_ms: 0,
@@ -37,13 +41,13 @@ impl IngestionTenantController {
         }
     }
 
-    // Initialize poll seconds parameter
+    // Initialize poll seconds parameter.
     pub fn set_k8s_poll_delay(&mut self, k8s_poll_ms: u64) -> &mut IngestionTenantController {
         self.k8s_poll_ms = k8s_poll_ms;
         return self
     }
 
-    // Initialize tenants from command line
+    // Initialize tenants from command line.
     pub fn set_initial_allowed_tenants(&mut self, initial_allowed_tenants: Vec<String>) -> &mut IngestionTenantController {
         for tenant_id in  initial_allowed_tenants.iter().cloned().into_iter() {
             self.initial_tenants.insert(tenant_id);
@@ -147,33 +151,8 @@ impl IngestionTenantController {
         }
     }
 
-    // Get tenants
-    pub async fn refresh_ingestion_tenants(&self,
-                                       continue_token: Option<String>) -> (Vec<String>, Option<String>) {
-
-
-        let client = self.k8s_client.clone().unwrap();
-        // Call Kubernetes to check ingestion tenant resources.
-        let api : Api<ingestiontenant::ingestiontenant::IngestionTenant> = Api::namespaced(client, &self.namespace);
-        let lp = if continue_token.is_some() {
-            ListParams::default().continue_token(&continue_token.unwrap().clone())
-        } else {
-            ListParams::default()
-        };
-
-        let ingestion_tenants_list = api.list(&lp).await.unwrap();
-
-        let mut tenants: Vec<String> = Vec::new();
-
-        for i_t in ingestion_tenants_list.items.into_iter() {
-            for tenant in i_t.spec.tenants {
-                tenants.push(tenant.clone());
-            };
-        };
-
-        (tenants, ingestion_tenants_list.metadata.continue_)
-    }
-
+    // Calculate difference between k8s and internal state
+    // Update tenants
     pub fn observe(&mut self, found_tenants: HashSet<String>) {
 
         debug!("number of ingestion tenants found : {}", found_tenants.len());
@@ -195,9 +174,47 @@ impl IngestionTenantController {
             };
         }
 
-
         debug!("--- Done observe(), got {} tenants ---", self.tenants_vec.len());
 
+    }
+
+    // Get tenants from k8s.
+    // Return a tuple containing
+    // bool -- status whether successfully refreshed tenants, or there was an error
+    // Vec<String> -- list of tenants ID to be ingested
+    // Option<String> -- optional continue token value
+    pub async fn refresh_ingestion_tenants(&self,
+                                       continue_token: Option<String>) -> (bool, Vec<String>, Option<String>) {
+
+        let client = self.k8s_client.clone().unwrap();
+        // Call Kubernetes to check ingestion tenant resources.
+        let api : Api<ingestiontenant::ingestiontenant::MetricsIngestionTenant> = Api::namespaced(client, &self.namespace);
+        let lp = if continue_token.is_some() {
+            ListParams::default().continue_token(&continue_token.unwrap().clone())
+        } else {
+            ListParams::default()
+        };
+
+        let mut tenants: Vec<String> = Vec::new();
+        let mut continue_ = None;
+
+        let tenants_acquired = match api.list(&lp).await {
+            Ok(tl) => {
+                for i_t in tl.items.into_iter() {
+                    for tenant in i_t.spec.tenants {
+                        tenants.push(tenant.clone());
+                    };
+                };
+                continue_ = tl.metadata.continue_;
+                true
+            },
+            Err(_) => {
+                error!("Failed to get k8s API response!");
+                false
+            }
+        };
+
+        (tenants_acquired, tenants, continue_)
     }
 
     // Get tenants vector to use.
@@ -220,7 +237,8 @@ impl IngestionTenantController {
     }
 }
 
-
+// Controller worker logic.
+// On start, acquire write lock
 pub async fn worker() {
     let mut c = CONTROLLER.write().await;
     c.init_k8s().await;
@@ -239,40 +257,54 @@ pub async fn worker() {
             let mut found_tenants: HashSet<String> = HashSet::new();
 
             let ctrl = CONTROLLER.read().await;
-            let (tenants_portion, next_token) = ctrl.refresh_ingestion_tenants(None).await;
+            let (tenants_acquired, tenants_portion, next_token) =
+                ctrl.refresh_ingestion_tenants(None).await;
             drop(ctrl);
 
-            for tenant in tenants_portion {
-                found_tenants.insert(tenant.clone());
-            }
-            let token_init = next_token.unwrap().clone();
+            if !tenants_acquired {
+                error!("Failed to acquire tenants from k8s, will retry later.");
+                continue;
+            } else {
+                for tenant in tenants_portion {
+                    found_tenants.insert(tenant.clone());
+                }
+                let token_init = next_token.unwrap().clone();
 
-            // Retrieve rest of data
-            if token_init.len() > 0 {
-                info!("Token: {}", token_init);
-                let mut t = token_init.clone();
-
-                loop {
-                    let token = t.clone();
-                    let ctrl = CONTROLLER.read().await;
-                    let (tenants_portion, _t) = ctrl.refresh_ingestion_tenants(Some(token)).await;
-                    drop(ctrl);
-
-                    for tenant in tenants_portion {
-                        found_tenants.insert(tenant.clone());
-                    }
-                    if !_t.is_some() {
-                        break
-                    } else {
-                        t = _t.unwrap().clone();
+                // Retrieve rest of data
+                if token_init.len() > 0 {
+                    info!("Token: {}", token_init);
+                    let mut t = token_init.clone();
+                    loop {
+                        let token = t.clone();
+                        let ctrl = CONTROLLER.read().await;
+                        let (tenants_acquired_inner,
+                            tenants_portion, _t) = ctrl.refresh_ingestion_tenants(Some(token)).await;
+                        drop(ctrl);
+                        if !tenants_acquired_inner {
+                            error!("Failed to acquire tenants from k8s, will retry later.");
+                            continue;
+                        } else {
+                            //
+                            for tenant in tenants_portion {
+                                found_tenants.insert(tenant.clone());
+                            }
+                            if !_t.is_some() {
+                                debug!("Finished acquiring tenants from k8s");
+                                break
+                            } else {
+                                t = _t.unwrap().clone();
+                            }
+                        };
+                        // End inner loop.
                     }
                 }
-            }
+            };
             debug!("preparing to write tenants");
             let mut ctrl = CONTROLLER.write().await;
             ctrl.observe(found_tenants);
             drop(ctrl);
-        }
+            // End outer loop.
+        };
     };
 
 }

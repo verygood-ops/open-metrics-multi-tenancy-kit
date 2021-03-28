@@ -78,7 +78,7 @@ fn default_port() -> u16 {
 }
 
 // k8s interval
-fn default_k8s_interval() -> u32 { 120 }
+fn default_k8s_interval() -> u32 { 0 }
 
 // requests per load
 fn default_parallel_requests_per_load() -> u16 {
