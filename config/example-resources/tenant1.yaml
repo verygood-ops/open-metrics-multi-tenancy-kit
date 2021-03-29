@@ -1,9 +1,9 @@
 apiVersion: "open-metrics.vgs.io/v1"
-kind: "MetricsIngestionTenant"
+kind: "OpenMetricsRule"
 metadata:
-  name: test
+  namespace: default
+  name: test1
 spec:
   tenants:
-    - "0"
-    - "1"
+    - "tnt1"
   description: "A test group for open-metrics-mt-proxy"

@@ -1,0 +1,17 @@
+apiVersion: "open-metrics.vgs.io/v1"
+kind: "OpenMetricsRule"
+metadata:
+  name: test
+spec:
+  tenants:
+    - "0"
+    - "1"
+  description: "A test group for open-metrics-mt-proxy"
+  groups:
+    - name: vgs_derived_metrics_1
+      interval: 1m
+      rules:
+        - expr: histogram_quantile(0.99, rate(proxy_processing_duration_ms_bucket[5m]))
+          record: p99:proxy_processing_duration_ms:5m
+        - expr: histogram_quantile(0.99, rate(proxy_processing_duration_ms_bucket[2m]))
+          record: p99:proxy_processing_duration_ms:2m

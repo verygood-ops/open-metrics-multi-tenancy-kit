@@ -13,7 +13,8 @@ use kube_metrics_mutli_tenancy_lib as kube_lib;
 // It is protected by global rw lock, which is acquired for writers
 // when doing k8s state change,
 // and for readers on every proxy request.
-pub static CONTROLLER: Lazy<RwLock<IngestionTenantController>> = Lazy::new(|| RwLock::new(IngestionTenantController::new()));
+pub static CONTROLLER: Lazy<RwLock<IngestionTenantController>> =
+    Lazy::new(|| RwLock::new(IngestionTenantController::new()));
 
 // Ingestion controller state
 pub struct IngestionTenantController {
@@ -66,7 +67,6 @@ impl IngestionTenantController {
         if !self.initial_tenants.contains(tenant_id) {
             // Check that tenant have not been added already
             if !self.tenants.contains(tenant_id) {
-                // Achieve barrier
 
                 debug!(
                     "Going to insert tenant ID {}",
@@ -216,64 +216,27 @@ pub async fn worker() {
         loop {
             interval.tick().await;
 
-            let mut found_tenants: HashSet<String> = HashSet::new();
-
+            // Acquire read lock.
             let ctrl = CONTROLLER.read().await;
-            let (tenants_acquired, tenants_portion, next_token) =
-                kube_lib::refresh_ingestion_tenants(
-                    ctrl.k8s_client.clone().unwrap(),
-                    None,
-                    &ctrl.namespace).await;
-            drop(ctrl);
+            let cli = ctrl.k8s_client.clone().unwrap();
+            match kube_lib::get_tenant_ids(
+                cli.clone(), &ctrl.namespace).await {
+                Ok(found_tenants) => {
+                    debug!("preparing to write tenants");
+                    // Drop read lock for current thread.
+                    drop(ctrl);
 
-            if !tenants_acquired {
-                error!("Failed to acquire tenants from k8s, will retry later.");
-                continue;
-            } else {
-                for tenant in tenants_portion {
-                    found_tenants.insert(tenant.clone());
-                }
-                let token_init = next_token.unwrap().clone();
-
-                // Retrieve rest of data
-                if token_init.len() > 0 {
-                    info!("Token: {}", token_init);
-                    let mut t = token_init.clone();
-                    loop {
-                        let token = t.clone();
-                        let ctrl = CONTROLLER.read().await;
-                        let (tenants_acquired_inner,
-                            tenants_portion, _t) = kube_lib::refresh_ingestion_tenants(
-                            ctrl.k8s_client.clone().unwrap(),
-                            Some(token),
-                            &ctrl.namespace
-                        ).await;
-                        drop(ctrl);
-                        if !tenants_acquired_inner {
-                            error!("Failed to acquire tenants from k8s, will retry later.");
-                            continue;
-                        } else {
-                            //
-                            for tenant in tenants_portion {
-                                found_tenants.insert(tenant.clone());
-                            }
-                            if !_t.is_some() {
-                                debug!("Finished acquiring tenants from k8s");
-                                break
-                            } else {
-                                t = _t.unwrap().clone();
-                            }
-                        };
-                        // End inner loop.
-                    }
+                    // Acquire write lock for current thread..
+                    let mut ctrl = CONTROLLER.write().await;
+                    // Compute in memory state change.
+                    ctrl.observe(found_tenants);
+                    // Drop write lock.
+                    drop(ctrl);
+                },
+                Err(msg) => {
+                    error!("failed to acquire tenants, will not observe(): {}", msg);
                 }
             };
-            debug!("preparing to write tenants");
-            let mut ctrl = CONTROLLER.write().await;
-            ctrl.observe(found_tenants);
-            drop(ctrl);
-            // End outer loop.
         };
     };
-
 }

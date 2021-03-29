@@ -1,4 +1,4 @@
-use log::{debug, error};
+use log::{debug, error, warn};
 use argh::FromArgs;
 
 use std::time::Duration;
@@ -18,9 +18,17 @@ use reqwest::header::HeaderValue;
 use warp::log as http_log;
 use warp::Filter;
 
+// common routines
+mod crud;
+mod rules;
+
+// ruler -> k8s sync component
 mod tracker;
 use tracker::tracker::tracker;
 
+// k8s -> ruler sync component
+mod updater;
+use updater::updater::updater;
 
 #[derive(FromArgs)]
 /// Open Metrics multi tenancy Proxy
@@ -38,8 +46,20 @@ struct OpenMetricsInformerArgs {
     ruler_upstream_url: String,
 
     /// start Kubernetes controller for IngestionTenant CRD
-    #[argh(option, default = "default_k8s_interval()")]
-    kubernetes_poll_interval_seconds: u32,
+    #[argh(option, default = "default_tracker_interval()")]
+    tracker_poll_interval_seconds: u32,
+
+    /// start Kubernetes controller for IngestionTenant CRD
+    #[argh(option, default = "default_updater_interval()")]
+    updater_poll_interval_seconds: u32,
+
+    /// enable removing rules for updater
+    #[argh(switch)]
+    enable_updater_remove_rules: bool,
+
+    /// enable removing rule resources for tracker
+    #[argh(switch)]
+    enable_tracker_remove_resources: bool,
 }
 
 // port
@@ -47,8 +67,12 @@ fn default_port() -> u16 {
     20093
 }
 
-// k8s interval
-fn default_k8s_interval() -> u32 { 30 }
+// k8s -> ruler interval
+fn default_updater_interval() -> u32 { 40 }
+
+// ruler -> k8s interval
+fn default_tracker_interval() -> u32 { 93 }
+
 
 #[tokio::main]
 pub async fn main() {
@@ -59,7 +83,11 @@ pub async fn main() {
 
     let interface = args.interface.clone().to_owned();
     let ruler_upstream_url = args.ruler_upstream_url.clone().to_owned();
-    let k8s_poll_interval_seconds = args.kubernetes_poll_interval_seconds.clone().to_owned();
+    let tracker_poll_interval_seconds = args.tracker_poll_interval_seconds.clone().to_owned();
+    let updater_poll_interval_seconds = args.updater_poll_interval_seconds.clone().to_owned();
+
+    let enable_updater_remove_rules = args.enable_updater_remove_rules.clone();
+    let enable_tracker_remove_resources = args.enable_tracker_remove_resources.clone();
 
     let r = Registry::new();
 
@@ -130,16 +158,37 @@ pub async fn main() {
             .build()
             .unwrap();
 
+        let cloned_client = k8s_client.unwrap().clone();
 
-        tokio::task::spawn(tracker(
-            // It is safe to unwrap, since client should be inited by the point.
-            k8s_client.unwrap().clone(),
-            ruler_client.clone(),
-            ruler_upstream_url.clone(),
-            Box::new(num_rules.clone()),
-            Box::new(tenants_detected.clone()),
-            (k8s_poll_interval_seconds * 1000 ).into()));
+        if tracker_poll_interval_seconds > 0 {
+            tokio::task::spawn(tracker(
+                // It is safe to unwrap, since client should be inited by the point.
+                cloned_client.clone(),
+                ruler_client.clone(),
+                ruler_upstream_url.clone(),
+                Box::new(num_rules.clone()),
+                Box::new(tenants_detected.clone()),
+                (tracker_poll_interval_seconds * 1000 ).into(),
+                !enable_tracker_remove_resources
+            ));
+        } else {
+            warn!("tracker component disabled");
+        };
 
+        if updater_poll_interval_seconds > 0 {
+            tokio::task::spawn(updater(
+                // It is safe to unwrap, since client should be inited by the point.
+                cloned_client.clone(),
+                ruler_client.clone(),
+                ruler_upstream_url.clone(),
+                Box::new(num_rules_updated.clone()),
+                Box::new(tenants_updated.clone()),
+                (updater_poll_interval_seconds * 1000 ).into(),
+                !enable_updater_remove_rules
+            ));
+        } else {
+            warn!("updater component disabled");
+        };
 
         let exit_code = match listen_addr {
             Ok(ip) => {
