@@ -23,7 +23,7 @@ mod metrics;
 mod proto;
 mod controller;
 
-// stream forwarder component
+// metrics stream forwarder component
 use forward::forward::process_proxy_payload;
 use forward::forward::ForwardingStatistics;
 

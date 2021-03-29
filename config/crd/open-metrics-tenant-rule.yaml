@@ -1,20 +1,26 @@
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
-  name: metricstenantrules.open-metrics.vgs.io
+  name: openmetricsrules.open-metrics.vgs.io
 spec:
   group: open-metrics.vgs.io
   names:
-    kind: MetricsTenantRule
-    plural: metricstenantrules
+    kind: OpenMetricsRule
+    plural: openmetricsrules
   scope: Namespaced
   validation:
     openAPIV3Schema:
       properties:
         spec:
-          description: MetricsTenantRule contains specification parameters for a
+          description: OpenMetricsRule CRD contains specification parameters for a
             Rule.
           properties:
+            tenants:
+              type: array
+              items:
+                type: string
+            description:
+              type: string
             groups:
               description: Content of Open Metrics rule file
               items:
@@ -48,4 +54,6 @@ spec:
                   - name
                   - rules
               type: array
+          required:
+            - tenants
   version: v1
