@@ -56,10 +56,6 @@ struct OpenMetricsInformerArgs {
     /// enable removing rules for updater
     #[argh(switch)]
     enable_updater_remove_rules: bool,
-
-    /// enable removing rule resources for tracker
-    #[argh(switch)]
-    enable_tracker_remove_resources: bool,
 }
 
 // port
@@ -87,7 +83,6 @@ pub async fn main() {
     let updater_poll_interval_seconds = args.updater_poll_interval_seconds.clone().to_owned();
 
     let enable_updater_remove_rules = args.enable_updater_remove_rules.clone();
-    let enable_tracker_remove_resources = args.enable_tracker_remove_resources.clone();
 
     let r = Registry::new();
 
@@ -168,8 +163,7 @@ pub async fn main() {
                 ruler_upstream_url.clone(),
                 Box::new(num_rules.clone()),
                 Box::new(tenants_detected.clone()),
-                (tracker_poll_interval_seconds * 1000 ).into(),
-                !enable_tracker_remove_resources
+                (tracker_poll_interval_seconds * 1000 ).into()
             ));
         } else {
             warn!("tracker component disabled");
