@@ -9,7 +9,8 @@ use std::panic::resume_unwind;
 use std::borrow::BorrowMut;
 
 
-// For the sake of simplicity, this discovers rules only for clients in
+// This method is complex, since it is instruments both k8s and cortex.
+// 1. Get tenants list
 pub async fn discover_ruler_rules(
     tenants: &Vec<String>,
     ruler_client: RClient,
@@ -112,81 +113,30 @@ pub async fn discover_ruler_rules(
     }
 }
 
-
-fn find_group_named(group_list: Vec<kube_lib::GroupSpec>, group_name: &String) -> Option<kube_lib::GroupSpec> {
+// Find group with given name in the vector of groups, and return it together with index
+pub fn find_group_named<'a>(group_list: &'a Vec<kube_lib::GroupSpec>, group_name: &String) -> (u32, Option<&'a kube_lib::GroupSpec>) {
+    let mut idx: u32 = 0;
     for group in group_list {
         if &group.name == group_name {
-            return Some(group)
+            return (idx.into(), Some(group))
+        } else {
+            idx += 1;
         }
     }
-    None
+    (0, None)
 }
 
-fn map_eq(a: HashMap<String,String>, b: HashMap<String,String>) -> bool {
-    let mut neq = false;
-    for k in a.keys() {
-        if !(b.contains_key(k) && b.get(k) == a.get(k)) {
-            neq = true;
-            break;
-        }
-    }
-    for k in b.keys() {
-        if !(a.contains_key(k) && a.get(k) == b.get(k)) {
-            neq = true;
-            break;
-        }
-    }
-    return !neq;
-}
-
-fn find_rule_named(rule_list: Vec<kube_lib::RuleSpec>, compare_to: kube_lib::RuleSpec) -> bool {
-    let mut found = false;
-    for rule in rule_list {
-
-        let compare_rule = compare_to.clone();
-
-        let labels_eq = if rule.labels.is_some() {
-            if compare_rule.labels.is_some() {
-                map_eq(rule.labels.unwrap(), compare_rule.labels.unwrap())
-            } else {false}
-        } else {compare_rule.labels.is_none()};
-
-        let anns_eq = if rule.annotations.is_some() {
-            if compare_rule.annotations.is_some() {
-                map_eq(rule.annotations.unwrap(), compare_rule.annotations.unwrap())
-            } else {false}
-        } else {compare_rule.annotations.is_none()};
-
-        if !labels_eq && anns_eq && rule.expr == compare_rule.expr &&
-            rule.for_.as_deref() == compare_rule.for_.as_deref() &&
-            rule.alert.as_deref() == compare_rule.alert.as_deref() &&
-            rule.record.as_deref() == compare_rule.record.as_deref() {
-            found = true;
-            break;
-        }
-    }
-    return found;
-}
-
-
+// Equality check for group specs
 fn are_groups_equal(original: &kube_lib::GroupSpec, copy: &kube_lib::GroupSpec) -> bool {
-    if original.name == copy.name &&
-        original.interval == copy.interval {
-        let mut found_diff = false;
-        for rule in original.rules.iter().cloned().into_iter() {
-            found_diff = !find_rule_named(copy.rules.to_vec(), rule);
-            if found_diff { break; }
-        };
-        for rule in copy.rules.iter().cloned().into_iter() {
-            found_diff = !find_rule_named(original.rules.to_vec(), rule);
-            if found_diff { break; }
-        }
-        found_diff
-    } else {false}
-
+    return kube_lib::GroupSpec::eq(original, copy);
 }
 
-fn get_or_create_action<'ret, 'src:'ret, 'a>(tenant_id: &'a String, groups_tenant_hashmap: &'src mut HashMap<String,Vec<kube_lib::GroupSpec>>) -> Vec<kube_lib::GroupSpec> {
+// given tenant id and group tenant hashmap, either get existing tenant group vector,
+// or create new vector
+fn get_or_create_action<'ret, 'src:'ret, 'a>(
+    tenant_id: &'a String,
+    groups_tenant_hashmap: &'src mut HashMap<String,Vec<kube_lib::GroupSpec>>
+) -> Vec<kube_lib::GroupSpec> {
     if groups_tenant_hashmap.contains_key(tenant_id) {
         groups_tenant_hashmap.get_mut(tenant_id).unwrap().to_owned()
     } else {
@@ -207,27 +157,38 @@ pub fn diff_rule_groups(
     // Calculate updates: all stuff different in origin
     for tenant_id in origin_rules.keys().into_iter() {
         debug!("origin tenant {}", tenant_id);
-        let origin_rule_groups_list = origin_rules.get(tenant_id).unwrap().iter().cloned().into_iter();
+        // it is safe to unwrap, since tenant_id had appeared iterating from origin_rules
+        let origin_rule_groups_list = origin_rules.get(tenant_id)
+            .unwrap().iter().cloned().into_iter();
         debug!("num rules in origin for tenant {}: {}", tenant_id, origin_rule_groups_list.len());
-        let mut updates_vec = get_or_create_action(tenant_id, &mut updates);
+        let mut updates_vec =
+            get_or_create_action(tenant_id, &mut updates);
         if !target_rules.contains_key(tenant_id) {
             // all rules go to updates
             updates_vec.extend(origin_rule_groups_list.into_iter());
         } else {
+            // safe to unwrap, since checked for !contains_key() above
             let target_rule_groups_list = target_rules.get(tenant_id).unwrap();
             for origin_group in origin_rule_groups_list.into_iter() {
-                match find_group_named(target_rule_groups_list.to_owned(), &origin_group.name) {
-                    Some(g) => {
+                // find whether group from origin already exists in target
+                match find_group_named(
+                    &target_rule_groups_list,
+                    &origin_group.name
+                ) {
+                    (_i, Some(g)) => {
                         if !are_groups_equal(&origin_group, &g) {
+                            // a group exists but it is not equal
                             debug!("group named {} for tenant {} are different in target and origin",
                                 origin_group.name, tenant_id);
                             updates_vec.push(origin_group);
                         } else {
+                            // a group exists and equal
                             debug!("group named {} for tenant {} already synced",
                                    origin_group.name, tenant_id);
                         }
                     },
-                    None => {
+                    (_i, None) => {
+                        // no group exists yet, need to create
                         debug!("no group with name {} exists in target", origin_group.name);
                         updates_vec.push(origin_group);
                     }
@@ -235,6 +196,7 @@ pub fn diff_rule_groups(
             };
         };
         if updates_vec.len() > 0 {
+            // Prepare updates
             updates.insert(tenant_id.clone(), updates_vec.to_owned());
         };
     };
@@ -242,19 +204,27 @@ pub fn diff_rule_groups(
     // Calculate removals: all stuff in target but not in main
     for tenant_id in target_rules.keys().into_iter() {
         debug!("target tenant {}", tenant_id);
-        let target_rule_groups_list = target_rules.get(tenant_id).unwrap().iter().cloned().into_iter();
-        let mut removals_vec = get_or_create_action(tenant_id, &mut removals);
+        // it is safe to unwrap, since tenant_id is sourced from target_rules keys
+        let target_rule_groups_list =
+            target_rules.get(tenant_id).unwrap().iter().cloned().into_iter();
+        let mut removals_vec =
+            get_or_create_action(tenant_id, &mut removals);
+
         if !origin_rules.contains_key(tenant_id) {
+            // tenant have been removed, should be safe to remove his rules
             debug!("no groups at all for tenant {} in origin", tenant_id);
             removals_vec.extend(target_rule_groups_list);
         } else {
+            // safe to unwrap, since checked for contains_key() above
             let origin_rule_groups_list = origin_rules.get(tenant_id).unwrap();
             for target_group in target_rule_groups_list {
-                match find_group_named(origin_rule_groups_list.to_owned(), &target_group.name) {
-                    Some(g) => {
+                match find_group_named(
+                    &origin_rule_groups_list,
+                    &target_group.name) {
+                    (_i, Some(g)) => {
                         debug!("group with name {} exists in both target and origin", g.name);
                     },
-                    None => {
+                    (_i, None) => {
                         debug!("no group named {} for tenant {}", target_group.name, tenant_id);
                         removals_vec.push(target_group);
                     }
@@ -262,6 +232,7 @@ pub fn diff_rule_groups(
             };
         };
         if removals_vec.len() > 0 {
+            // Prepare removals
             removals.insert(tenant_id.clone(), removals_vec.to_owned());
         }
     };
@@ -269,7 +240,9 @@ pub fn diff_rule_groups(
     return (HashMap::from(updates), HashMap::from(removals))
 }
 
-pub fn get_tenant_map_from_rules_list(open_metrics_rules: Vec<kube_lib::OpenMetricsRule>) -> HashMap<String, Vec<kube_lib::GroupSpec>> {
+// Given list of OpenMetricsRule, get hash map of (tenant_id) -> (list of egligible rules)
+pub fn get_tenant_map_from_rules_list(open_metrics_rules: Vec<kube_lib::OpenMetricsRule>)
+    -> HashMap<String, Vec<kube_lib::GroupSpec>> {
     let mut tenant_specs_k8s: HashMap<String, Vec<kube_lib::GroupSpec>> = HashMap::new();
     for tenant_rule in open_metrics_rules.iter().cloned().into_iter() {
         for tenant_id in tenant_rule.spec.tenants {

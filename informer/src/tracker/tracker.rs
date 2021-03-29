@@ -11,6 +11,7 @@ use kube::{Api,Client,api::ListParams};
 use prometheus::Counter;
 use tokio::time::interval;
 
+use crate::crud::crud;
 use crate::rules::rules;
 
 
@@ -21,8 +22,7 @@ pub async fn tracker(k8s_client: Client,
                      ruler_api_url: String,
                      num_rules: Box<Counter>,
                      num_tenants: Box<Counter>,
-                     ms: u64,
-                     skip_resource_removal: bool) {
+                     ms: u64) {
 
     let mut interval = interval(Duration::from_millis(ms));
     let namespace = std::env::var("OPEN_METRICS_INFORMER_NAMESPACE")
@@ -67,18 +67,25 @@ pub async fn tracker(k8s_client: Client,
                                 let (updates, removals) =
                                     rules::diff_rule_groups(tenant_k8s_specs, r);
 
+                                let mut updates_num = 0;
                                 for (tenant_id, update_groups) in updates.clone().into_iter() {
                                     for group in update_groups {
                                         info!("TRACKER: Going to ADD {:?} to k8s {} tenant", group, tenant_id);
+                                        crud::create_or_update_k8s_resource(
+                                            k8s_client.clone(),
+                                            &tenant_id,
+                                            &namespace,
+                                            group
+                                        ).await;
+                                        updates_num += 1;
                                     }
                                 };
+                                info!("done k8s updates: {} in total", updates_num);
 
-                                if !skip_resource_removal {
-                                    for (tenant_id, remove_groups) in removals.clone().into_iter() {
-                                        for group in remove_groups {
-                                            info!("TRACKER: Going to REMOVE {:?} from k8s {} tenant", group, tenant_id);
-                                        }
-                                    };
+                                for (tenant_id, remove_groups) in removals.clone().into_iter() {
+                                    for group in remove_groups {
+                                        info!("TRACKER: Ruler group {:?} is ABSENT from k8s {} tenant", group, tenant_id);
+                                    }
                                 };
                             },
                             Err(msg) => {
