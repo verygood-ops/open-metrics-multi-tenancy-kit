@@ -1,10 +1,9 @@
+#![deny(warnings)]
 use std::collections::{HashMap,HashSet};
-use std::iter::FromIterator;
 
-use kube::{Api, Client, CustomResource, api::{ListParams, ObjectList}};
+use kube::{Api, Client, CustomResource, api::ListParams};
 use log::{debug, error, info};
 use schemars::JsonSchema;
-use serde_yaml::Value;
 use serde::{Deserialize, Serialize};
 
 
@@ -72,7 +71,7 @@ pub async fn discover_open_metrics_rules(k8s_client: Client, namespace: &String)
                 let mut t = token_init.clone();
                 loop {
                     let token = t.clone();
-                    let (tenants_acquired_inner,
+                    let (_tenants_acquired_inner,
                         rules_portion, _t) = refresh_open_metrics_rules(
                         client.clone(), Some(token), &namespace.clone()).await;
                     for rule in rules_portion {
@@ -124,6 +123,7 @@ pub async fn get_tenant_ids(k8s_client: Client, namespace: &String) -> Result<Ha
 
 // A MetricsIngestionTenant CRD. Lists tenants eligible for metrics ingestion.
 #[derive(CustomResource, Deserialize, Serialize, Clone, PartialEq, Eq, Debug, JsonSchema)]
+#[kube(status = "OpenMetricsRuleStatus")]
 #[kube(group = "open-metrics.vgs.io", version = "v1", kind = "OpenMetricsRule", namespaced)]
 pub struct OpenMetricsRuleSpec {
     // A tenant identifier, value to be sent with X-Scope-OrgID header
@@ -135,6 +135,12 @@ pub struct OpenMetricsRuleSpec {
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<GroupSpec>
+}
+
+// A specification for a rule status
+#[derive(Serialize, Clone,PartialEq, Eq, Debug,  Deserialize, JsonSchema)]
+pub struct OpenMetricsRuleStatus {
+    pub ruler_updated: bool,
 }
 
 

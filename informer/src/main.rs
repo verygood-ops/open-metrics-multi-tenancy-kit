@@ -1,3 +1,4 @@
+#![deny(warnings)]
 use log::{debug, error, warn};
 use argh::FromArgs;
 
@@ -13,7 +14,6 @@ use prometheus::{
 use tokio;
 use tokio::time::interval;
 use env_logger;
-use reqwest::ClientBuilder;
 use reqwest::header::HeaderValue;
 use warp::log as http_log;
 use warp::Filter;

@@ -1,13 +1,11 @@
-use kube_metrics_mutli_tenancy_lib as kube_lib;
-use serde_yaml;
-
-use log::{debug,error,info,trace,warn};
-use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::time::Duration;
 
+use kube::Client;
+use kube_metrics_mutli_tenancy_lib as kube_lib;
+use log::{debug,error,info};
+
 use reqwest::Client as RClient;
-use kube::{Api,Client,api::ListParams};
 use prometheus::Counter;
 use tokio::time::interval;
 
@@ -50,9 +48,9 @@ pub async fn tracker(k8s_client: Client,
                             tenants_found += 1;
                             num_tenants.inc();
                             let vg = r.get(k).unwrap();
-                            for g in vg {
+                            for (g, _i) in vg {
                                 groups_found += 1;
-                                for r in g.rules.iter().cloned().into_iter() {
+                                for _r in g.rules.iter().cloned().into_iter() {
                                     rules_found += 1;
                                     num_rules.inc();
                                 }
@@ -69,7 +67,7 @@ pub async fn tracker(k8s_client: Client,
 
                                 let mut updates_num = 0;
                                 for (tenant_id, update_groups) in updates.clone().into_iter() {
-                                    for group in update_groups {
+                                    for (group, _i) in update_groups {
                                         info!("TRACKER: Going to ADD {:?} to k8s {} tenant", group, tenant_id);
                                         crud::create_or_update_k8s_resource(
                                             k8s_client.clone(),
