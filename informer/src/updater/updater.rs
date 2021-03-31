@@ -1,11 +1,10 @@
 use kube_metrics_mutli_tenancy_lib as kube_lib;
 use log::{debug,info,error};
 
-use kube::Client;
+use kube::{Api,Client};
 use reqwest::Client as RClient;
 use prometheus::Counter;
 use tokio::time::interval;
-use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::time::Duration;
 
@@ -27,13 +26,14 @@ pub async fn updater(k8s_client: Client,
 
     loop {
         interval.tick().await;
+        let cli = k8s_client.clone();
 
         match kube_lib::discover_open_metrics_rules(
             k8s_client.clone(),
             &namespace.clone()
         ).await {
             Ok(k8s_rules) => {
-                let rules_clone = Vec::from_iter(k8s_rules.iter().cloned().into_iter());
+                let mut rules_clone = Vec::from_iter(k8s_rules.iter().cloned().into_iter());
                 let tenants = kube_lib::discover_tenant_ids(k8s_rules);
                 match rules::discover_ruler_rules(
                     &Vec::from_iter(tenants),
@@ -42,8 +42,8 @@ pub async fn updater(k8s_client: Client,
                     &namespace.clone()
                 ).await {
                     Ok(tenant_specs_ruler) => {
-                        let mut tenant_k8s_specs =
-                            rules::get_tenant_map_from_rules_list(rules_clone);
+                        let tenant_k8s_specs =
+                            rules::get_tenant_map_from_rules_list(rules_clone.clone());
 
                         let (
                             rule_updates_add,
@@ -52,9 +52,12 @@ pub async fn updater(k8s_client: Client,
                             tenant_specs_ruler,
                             tenant_k8s_specs);
 
+                        let api : Api<kube_lib::OpenMetricsRule> = Api::namespaced(
+                            cli.clone(), &namespace.clone());
                         for (tenant_id, update_groups)
                                 in rule_updates_add.clone().into_iter() {
-                            for group in update_groups {
+                            num_tenants.inc();
+                            for (group, k8s_idx) in update_groups {
                                 info!("UPDATER: Going to ADD {:?} to {} tenant", group, tenant_id);
                                 crud::update_ruler_rule(
                                     ruler_client.clone(),
@@ -63,13 +66,25 @@ pub async fn updater(k8s_client: Client,
                                     &namespace.clone(),
                                     group
                                 ).await;
+                                num_rules.inc();
+
+                                if k8s_idx >= 0 {
+                                    // safe to unwrap since update came from resource
+                                    let rule_updated = rules_clone.get_mut(k8s_idx as usize).cloned().unwrap();
+                                    let resource_name = rule_updated.metadata.name.clone().unwrap();
+                                    crud::resource_updated(
+                                        &api,
+                                        &resource_name,
+                                        rule_updated.clone()).await;
+                                }
+
                             }
                         };
 
                         if !skip_ruler_group_removal {
                             for (tenant_id, remove_groups)
                                     in rule_updates_remove.clone().into_iter() {
-                                for group in remove_groups {
+                                for (group, _k8s_idx) in remove_groups {
                                     info!(
                                         "UPDATER: Going to REMOVE {:?} from {} tenant",
                                         group, tenant_id);
@@ -79,7 +94,7 @@ pub async fn updater(k8s_client: Client,
                                         &tenant_id.clone(),
                                         &namespace.clone(),
                                         group
-                                    );
+                                    ).await;
                                 };
                             };
                         };
@@ -87,12 +102,12 @@ pub async fn updater(k8s_client: Client,
 
                     },
                     Err(msg) => {
-                        error!("failed to discover ruler rules");
+                        error!("failed to discover ruler rules: {}", msg);
                     }
                 }
             },
             Err(msg) => {
-                error!("failed to discover k8s rules");
+                error!("failed to discover k8s rules: {}", msg);
             }
         };
 
