@@ -32,6 +32,7 @@ use forward::forward::ForwardingStatistics;
 // controller component
 use controller::controller::CONTROLLER;
 use controller::controller::worker;
+use controller::controller::controller_iteration;
 
 
 
@@ -328,8 +329,16 @@ async fn main() {
     let mut c = CONTROLLER.write().await;
     c.set_initial_allowed_tenants(allow_listed_tenants)
         .set_k8s_poll_delay((k8s_poll_interval_seconds * 1000) as u64);
+
+    if k8s_client.is_some() {
+        // Initialize tenants from k8s
+        c.k8s_client = k8s_client.clone();
+        drop(c);
+        controller_iteration().await;
+    } else {
+        drop(c);
+    }
     tokio::task::spawn(worker(k8s_client.clone()));
-    drop(c);
 
     let listen_addr = interface.parse::<Ipv4Addr>();
 

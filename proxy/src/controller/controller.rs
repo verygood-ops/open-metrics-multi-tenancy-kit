@@ -18,8 +18,8 @@ pub static CONTROLLER: Lazy<RwLock<IngestionTenantController>> =
 
 // Ingestion controller state
 pub struct IngestionTenantController {
+    pub k8s_client: Option<Client>,
     k8s_poll_ms: u64,
-    k8s_client: Option<Client>,
     initial_tenants: HashSet<String>,
     tenants: HashSet<String>,
     tenants_vec: Vec<String>,

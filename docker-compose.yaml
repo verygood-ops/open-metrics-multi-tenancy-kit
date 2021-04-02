@@ -4,10 +4,12 @@ services:
     build:
       dockerfile: informer/Dockerfile
       context: .
+    image: 883127560329.dkr.ecr.us-west-2.amazonaws.com/open-metrics-multi-tenancy-kit:${VERSION}
   proxy:
     build:
       dockerfile: proxy/Dockerfile
       context: .
+    image: 883127560329.dkr.ecr.us-west-2.amazonaws.com/open-metrics-multi-tenancy-proxy:${VERSION}
   test:
     build:
       dockerfile: ops/Dockerfile
