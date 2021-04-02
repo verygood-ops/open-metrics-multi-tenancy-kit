@@ -52,11 +52,6 @@ impl IngestionTenantController {
         self.stopping = None;
     }
 
-    pub fn set_stopping(&mut self) {
-        self.stopping = Some(true);
-
-    }
-
     // Initialize poll seconds parameter.
     pub fn set_k8s_poll_delay(&mut self, k8s_poll_ms: u64) -> &mut IngestionTenantController {
         self.k8s_poll_ms = k8s_poll_ms;
@@ -208,6 +203,36 @@ impl IngestionTenantController {
     }
 }
 
+// Perform iteration
+pub async fn controller_iteration() -> bool {
+    // Acquire read lock.
+    let ctrl = CONTROLLER.read().await;
+    if ctrl.stopping.is_some() {
+        true
+    } else {
+        let cli = ctrl.k8s_client.clone().unwrap();
+        match kube_lib::get_tenant_ids(
+            cli.clone(), &ctrl.namespace).await {
+            Ok(found_tenants) => {
+                debug!("preparing to write tenants");
+                // Drop read lock for current thread.
+                drop(ctrl);
+
+                // Acquire write lock for current thread..
+                let mut ctrl = CONTROLLER.write().await;
+                // Compute in memory state change.
+                ctrl.observe(found_tenants);
+                // Drop write lock.
+                drop(ctrl);
+            },
+            Err(msg) => {
+                error!("failed to acquire tenants, will not observe(): {}", msg);
+            }
+        };
+        false
+    }
+}
+
 // Controller worker logic.
 // On start, acquire write lock
 pub async fn worker(k8s_client: Option<Client>) {
@@ -226,35 +251,15 @@ pub async fn worker(k8s_client: Option<Client>) {
         loop {
             sleep(Duration::from_millis(ms)).await;
             debug!("next tick start");
-            // Acquire read lock.
-            let ctrl = CONTROLLER.read().await;
-            if ctrl.stopping.is_some() {
+            let do_break = controller_iteration().await;
+            if do_break {
                 break;
             } else {
-                let cli = ctrl.k8s_client.clone().unwrap();
-                match kube_lib::get_tenant_ids(
-                    cli.clone(), &ctrl.namespace).await {
-                    Ok(found_tenants) => {
-                        debug!("preparing to write tenants");
-                        // Drop read lock for current thread.
-                        drop(ctrl);
-
-                        // Acquire write lock for current thread..
-                        let mut ctrl = CONTROLLER.write().await;
-                        // Compute in memory state change.
-                        ctrl.observe(found_tenants);
-                        // Drop write lock.
-                        drop(ctrl);
-                    },
-                    Err(msg) => {
-                        error!("failed to acquire tenants, will not observe(): {}", msg);
-                    }
-                };
+                debug!("no stopping directive, will continue!");
             }
-
         };
         let mut ctrl = CONTROLLER.write().await;
-        ctrl.stopping = None;
+        ctrl.clean();
         drop(ctrl);
         debug!("restored controller");
     } else {
@@ -416,7 +421,7 @@ mod tests {
 
         // Clean up global state
         let mut controller = crate::CONTROLLER.write().await;
-        controller.set_stopping();
+        controller.stopping = Some(true);
         sleep(Duration::from_secs(1)).await;
         controller.clean();
         worker_handle.abort();
@@ -499,7 +504,7 @@ mod tests {
 
         // Clean up global state
         let mut controller = crate::CONTROLLER.write().await;
-        controller.set_stopping();
+        controller.stopping = Some(true);
         sleep(Duration::from_secs(1)).await;
         controller.clean();
         worker_handle.abort();

@@ -14,7 +14,7 @@ use warp::http::StatusCode;
 use crate::metrics;
 use crate::proto;
 use metrics::metrics::process_time_serie;
-use prometheus::{Counter, CounterVec, Histogram};
+use prometheus::{Counter, IntCounterVec, Histogram};
 use proto::prometheus::{MetricMetadata, WriteRequest};
 
 pub enum ForwardingStatistics {
@@ -39,7 +39,7 @@ pub async fn process_proxy_payload(
     _ingester_stream_url: String,
     _parallel_request_per_load: u16,
     _internal_stats: &HashMap<u8, Counter>,
-    _internal_stats_vec: &HashMap<u8, CounterVec>,
+    _internal_stats_vec: &HashMap<u8, IntCounterVec>,
     _internal_stats_histograms: &HashMap<u8, Histogram>,
     _bytes: warp::hyper::body::Bytes,
 ) -> Result<impl warp::Reply, Infallible> {
@@ -98,10 +98,10 @@ pub async fn process_proxy_payload(
             .get(&(ForwardingStatistics::NumFailures as u8))
             .unwrap();
 
-        let num_series: &CounterVec = _internal_stats_vec
+        let num_series: &IntCounterVec = _internal_stats_vec
             .get(&(ForwardingStatistics::NumSeries as u8))
             .unwrap();
-        let total_requests: &CounterVec = _internal_stats_vec
+        let total_requests: &IntCounterVec = _internal_stats_vec
             .get(&(ForwardingStatistics::TotalRequests as u8))
             .unwrap();
 
@@ -137,7 +137,7 @@ pub async fn process_proxy_payload(
                 .inc();
             num_series
                 .with_label_values(&[tenant_id.as_str()])
-                .inc_by(tenant_data.get(tenant_id).unwrap().timeseries.len() as f64);
+                .inc_by(tenant_data.get(tenant_id).unwrap().timeseries.len() as u64);
         }
 
         let responses = futures::stream::iter(tenant_data.into_iter())

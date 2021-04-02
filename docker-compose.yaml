@@ -8,3 +8,9 @@ services:
     build:
       dockerfile: proxy/Dockerfile
       context: .
+  test:
+    build:
+      dockerfile: ops/Dockerfile
+      context: .
+    command: test
+    entrypoint: cargo

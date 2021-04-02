@@ -12,7 +12,7 @@ use env_logger;
 use kube::Client;
 use log::error;
 use prometheus::{
-    register_histogram, Counter, CounterVec, Encoder, Histogram, Opts, Registry, TextEncoder,
+    register_histogram, Counter, IntCounterVec, Encoder, Histogram, Opts, Registry, TextEncoder,
 };
 use reqwest::header::HeaderValue;
 use tokio;
@@ -155,11 +155,11 @@ async fn main() {
 
     // Prometheus metrics
     let num_series_opts = Opts::new("open_metrics_proxy_series", "number of series");
-    let num_series = CounterVec::new(num_series_opts, &["tenant_id"]).unwrap();
+    let num_series = IntCounterVec::new(num_series_opts, &["tenant_id"]).unwrap();
     r.register(Box::new(num_series.clone())).unwrap();
 
-    let total_requests_opts = Opts::new("open_metrics_proxy_requests", "number of series");
-    let total_requests = CounterVec::new(total_requests_opts, &["tenant_id"]).unwrap();
+    let total_requests_opts = Opts::new("open_metrics_proxy_requests", "number of requests");
+    let total_requests = IntCounterVec::new(total_requests_opts, &["tenant_id"]).unwrap();
     r.register(Box::new(total_requests.clone())).unwrap();
 
     let num_failures_opts = Opts::new("open_metrics_proxy_failures", "number of series");
@@ -186,7 +186,7 @@ async fn main() {
     .unwrap();
     r.register(Box::new(histogram.clone())).unwrap();
 
-    let mut counter_vecs = HashMap::<u8, CounterVec>::new();
+    let mut counter_vecs = HashMap::<u8, IntCounterVec>::new();
     counter_vecs.insert(ForwardingStatistics::TotalRequests as u8, total_requests);
     counter_vecs.insert(ForwardingStatistics::NumSeries as u8, num_series);
 
@@ -227,8 +227,8 @@ async fn main() {
     }
 
     fn with_counters_vec(
-        __counter_vecs: HashMap<u8, CounterVec>,
-    ) -> impl Filter<Extract = (HashMap<u8, CounterVec>,), Error = Infallible> + Clone {
+        __counter_vecs: HashMap<u8, IntCounterVec>,
+    ) -> impl Filter<Extract = (HashMap<u8, IntCounterVec>,), Error = Infallible> + Clone {
         warp::any().map(move || __counter_vecs.clone())
     }
 

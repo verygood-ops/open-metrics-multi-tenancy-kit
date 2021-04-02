@@ -6,7 +6,7 @@ use kube_metrics_mutli_tenancy_lib as kube_lib;
 use log::{debug,error,info};
 
 use reqwest::Client as RClient;
-use prometheus::Counter;
+use prometheus::IntCounterVec;
 use tokio::time::interval;
 
 use crate::crud::crud;
@@ -18,8 +18,8 @@ use crate::rules::rules;
 pub async fn tracker(k8s_client: Client,
                      ruler_client: RClient,
                      ruler_api_url: String,
-                     num_rules: Box<Counter>,
-                     num_tenants: Box<Counter>,
+                     num_rules: Box<IntCounterVec>,
+                     num_tenants: Box<IntCounterVec>,
                      ms: u64) {
 
     let mut interval = interval(Duration::from_millis(ms));
@@ -46,13 +46,15 @@ pub async fn tracker(k8s_client: Client,
                         let mut rules_found: u32 = 0;
                         for k in r.keys().into_iter() {
                             tenants_found += 1;
-                            num_tenants.inc();
+                            // Safe to unwrap atomic
+                            (*num_tenants).with_label_values(&[k.as_str()]).inc();
                             let vg = r.get(k).unwrap();
                             for (g, _i) in vg {
                                 groups_found += 1;
                                 for _r in g.rules.iter().cloned().into_iter() {
                                     rules_found += 1;
-                                    num_rules.inc();
+                                    // Safe to unwrap atomic
+                                    (*num_rules).with_label_values(&[k.as_str()]).inc();
                                 }
                             }
                         };

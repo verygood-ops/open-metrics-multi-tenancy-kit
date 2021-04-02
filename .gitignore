@@ -3,3 +3,4 @@ target/
 .py[co]
 __pycache__/
 prometheus_pb2.py
+proxy/prometheus.proto
