@@ -3,7 +3,7 @@ use log::{debug,info,error};
 
 use kube::{Api,Client};
 use reqwest::Client as RClient;
-use prometheus::Counter;
+use prometheus::IntCounterVec;
 use tokio::time::interval;
 use std::iter::FromIterator;
 use std::time::Duration;
@@ -16,8 +16,8 @@ use crate::rules::rules;
 pub async fn updater(k8s_client: Client,
                      ruler_client: RClient,
                      ruler_api_url: String,
-                     num_rules: Box<Counter>,
-                     num_tenants: Box<Counter>,
+                     num_rules: Box<IntCounterVec>,
+                     num_tenants: Box<IntCounterVec>,
                      ms: u64,
                      skip_ruler_group_removal: bool) {
     let mut interval = interval(Duration::from_millis(ms));
@@ -56,7 +56,8 @@ pub async fn updater(k8s_client: Client,
                             cli.clone(), &namespace.clone());
                         for (tenant_id, update_groups)
                                 in rule_updates_add.clone().into_iter() {
-                            num_tenants.inc();
+                            // Safe to unwrap atomic
+                            (*num_tenants).with_label_values(&[tenant_id.as_str()]).inc();
                             for (group, k8s_idx) in update_groups {
                                 info!("UPDATER: Going to ADD {:?} to {} tenant", group, tenant_id);
                                 crud::update_ruler_rule(
@@ -66,7 +67,8 @@ pub async fn updater(k8s_client: Client,
                                     &namespace.clone(),
                                     group
                                 ).await;
-                                num_rules.inc();
+                                // Safe to unwrap atomic
+                                &num_rules.with_label_values(&[tenant_id.as_str()]).inc();
 
                                 if k8s_idx >= 0 {
                                     // safe to unwrap since update came from resource
@@ -89,6 +91,7 @@ pub async fn updater(k8s_client: Client,
                                         "UPDATER: Going to REMOVE {:?} from {} tenant",
                                         group, tenant_id);
                                     crud::remove_ruler_rule(
+
                                         ruler_client.clone(),
                                         &ruler_api_url.clone(),
                                         &tenant_id.clone(),

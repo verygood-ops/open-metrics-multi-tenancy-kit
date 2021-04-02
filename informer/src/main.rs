@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![deny(redundant_semicolons)]
 use log::{debug, error, warn};
 use argh::FromArgs;
 
@@ -9,7 +10,7 @@ use std::convert::Infallible;
 
 use kube::Client;
 use prometheus::{
-    Counter, Encoder, Opts, Registry, TextEncoder,
+    IntCounterVec, Encoder, Opts, Registry, TextEncoder,
 };
 use tokio;
 use tokio::time::interval;
@@ -87,19 +88,19 @@ pub async fn main() {
     let r = Registry::new();
 
     let num_rules_opts = Opts::new("open_metrics_informer_tracker_rules", "rules detected");
-    let num_rules = Counter::with_opts(num_rules_opts).unwrap();
+    let num_rules = IntCounterVec::new(num_rules_opts, &["tenant_id"]).unwrap();
     r.register(Box::new(num_rules.clone())).unwrap();
 
     let tenants_detected_opts = Opts::new("open_metrics_informer_tracker_tenants", "tenants detetcted");
-    let tenants_detected = Counter::with_opts(tenants_detected_opts).unwrap();
+    let tenants_detected = IntCounterVec::new(tenants_detected_opts, &["tenant_id"]).unwrap();
     r.register(Box::new(tenants_detected.clone())).unwrap();
 
     let num_rules_updated_opts = Opts::new("open_metrics_informer_updater_rules", "rules updated");
-    let num_rules_updated = Counter::with_opts(num_rules_updated_opts).unwrap();
+    let num_rules_updated = IntCounterVec::new(num_rules_updated_opts, &["tenant_id"]).unwrap();
     r.register(Box::new(num_rules_updated.clone())).unwrap();
 
     let tenants_updated_opts = Opts::new("open_metrics_informer_updater_tenants", "tenants updated");
-    let tenants_updated = Counter::with_opts(tenants_updated_opts).unwrap();
+    let tenants_updated = IntCounterVec::new(tenants_updated_opts, &["tenant_id"]).unwrap();
     r.register(Box::new(tenants_updated.clone())).unwrap();
 
     fn with_registry(

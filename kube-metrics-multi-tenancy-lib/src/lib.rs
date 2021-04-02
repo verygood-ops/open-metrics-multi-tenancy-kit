@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![deny(redundant_semicolons)]
 use std::collections::{HashMap,HashSet};
 
 use kube::{Api, Client, CustomResource, api::ListParams};
@@ -37,8 +38,8 @@ pub async fn refresh_open_metrics_rules(k8s_client: Client,
             continue_ = tl.metadata.continue_;
             true
         },
-        Err(_) => {
-            error!("Failed to get k8s API response!");
+        Err(_i) => {
+            error!("Failed to get k8s API response.");
             false
         }
     };
@@ -164,6 +165,155 @@ pub struct RuleSpec {
 #[derive(Serialize, Clone,PartialEq, Eq, Debug,  Deserialize, JsonSchema)]
 pub struct GroupSpec {
     pub name: String,
-    pub interval: String,
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub interval: Option<String>,
     pub rules: Vec<RuleSpec>,
+}
+
+#[cfg(test)]
+mod tests {
+
+    use kube::{Client, Service};
+
+    use futures::pin_mut;
+    use http::{Request, Response};
+    use hyper::Body;
+    use env_logger;
+    use tower_test::mock;
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
+    use crate::{discover_open_metrics_rules, discover_tenant_ids, get_tenant_ids};
+    use k8s_openapi::serde_json::Value;
+
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    fn test_fixture_1() -> Value {
+        serde_json::json!({
+                    "apiVersion": "v1",
+                    "kind": "List",
+                    "metadata": {
+                        "resourceVersion": "",
+                        "selfLink": ""
+                    },
+                    "items": [
+                        // First test rule
+                        {
+                            "apiVersion": "open-metrics.vgs.io",
+                            "kind": "OpenMetricsRule",
+                            "metadata": {
+                                "name": "test1",
+                                "namespace": "test",
+                                "annotations": { "kube-rs": "test-2" },
+                            },
+                            "spec": {
+                                "tenants": [
+                                    "tenant7",
+                                    "tenant8"
+                                ]
+                            }
+                        },
+                        // Second test rule
+                        {
+                            "apiVersion": "open-metrics.vgs.io",
+                            "kind": "OpenMetricsRule",
+                            "metadata": {
+                                "name": "test19",
+                                "namespace": "test",
+                                "annotations": { "kube-rs": "test-2" },
+                            },
+                            "spec": {
+                                "tenants": [
+                                    "tenant1",
+                                    "tenant2"
+                                ]
+                            }
+                        }
+                    ]
+                })
+    }
+
+    #[tokio::test]
+    async fn test_discover_open_metrics_rules() {
+        init();
+        let (mock_service, handle) = mock::pair::<Request<Body>, Response<Body>>();
+        let spawned = tokio::spawn(async move {
+            // Receive a request for pod and respond with some data
+            pin_mut!(handle);
+            let (request, send) = handle.next_request().await.expect("service not called");
+            assert_eq!(request.method(), http::Method::GET);
+            assert_eq!(request.uri().to_string(), "/apis/open-metrics.vgs.io/v1/namespaces/test/openmetricsrules?");
+            let l = test_fixture_1();
+            let rules = serde_json::to_string(&l).unwrap();
+            send.send_response(
+                Response::builder()
+                    .body(Body::from(rules))
+                    .unwrap(),
+            );
+        });
+
+        // `kube::Service` takes `tower::Service` with request/response of `hyper::Body`
+        let service = Service::new(mock_service);
+
+        // Verify discovery works for tenants without rules
+        let discovered_rules = discover_open_metrics_rules(
+            Client::new(service), &String::from("test")).await.unwrap();
+
+        assert_eq!(discovered_rules.len(), 2);
+
+        // Verify tenant discovery works
+        let discovered_tenant_ids = discover_tenant_ids(discovered_rules);
+
+        let expected_tenants = vec![
+            String::from("tenant1"),
+            String::from("tenant2"),
+            String::from("tenant7"),
+            String::from("tenant8"),
+        ];
+        let expected_tenant_ids: HashSet<String> = HashSet::from_iter(expected_tenants.iter().cloned().into_iter());
+
+        assert_eq!(discovered_tenant_ids, expected_tenant_ids);
+
+        spawned.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_tenant_ids() {
+        init();
+        let (mock_service, handle) = mock::pair::<Request<Body>, Response<Body>>();
+        let spawned = tokio::spawn(async move {
+            // Receive a request for pod and respond with some data
+            pin_mut!(handle);
+            let (request, send) = handle.next_request().await.expect("service not called");
+            assert_eq!(request.method(), http::Method::GET);
+            assert_eq!(request.uri().to_string(), "/apis/open-metrics.vgs.io/v1/namespaces/test/openmetricsrules?");
+            let l = test_fixture_1();
+            let rules = serde_json::to_string(&l).unwrap();
+            send.send_response(
+                Response::builder()
+                    .body(Body::from(rules))
+                    .unwrap(),
+            );
+        });
+
+        // `kube::Service` takes `tower::Service` with request/response of `hyper::Body`
+        let service = Service::new(mock_service);
+
+        // Verify tenant ID discovery works
+        let discovered_tenant_ids = get_tenant_ids(Client::new(service), &String::from("test")).await.unwrap();
+
+        let expected_tenants = vec![
+            String::from("tenant1"),
+            String::from("tenant2"),
+            String::from("tenant7"),
+            String::from("tenant8"),
+        ];
+        let expected_tenant_ids: HashSet<String> = HashSet::from_iter(expected_tenants.iter().cloned().into_iter());
+
+        assert_eq!(discovered_tenant_ids, expected_tenant_ids);
+
+        spawned.await.unwrap();
+    }
+
 }

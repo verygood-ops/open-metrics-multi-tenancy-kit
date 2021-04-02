@@ -49,11 +49,17 @@ pub async fn discover_ruler_rules(
                     }
                 };
                 if body.is_some() {
+                    let body_text = body.unwrap();
+
                     let g: Result<HashMap<String, Vec<kube_lib::GroupSpec>>,
-                        serde_yaml::Error> = match serde_yaml::from_str(&body.unwrap()) {
+                        serde_yaml::Error> = match serde_yaml::from_str(&body_text) {
                         Ok(y) => Ok(y),
-                        Err(e) => Err(e)
+                        Err(e) => {
+                            error!("failed to deserialize input yaml: {}", e.to_string());
+                            Err(e)
+                        }
                     };
+
                     if g.is_ok() {
                         let groups = g.unwrap();
                         if groups.len() > 0 {
@@ -72,7 +78,7 @@ pub async fn discover_ruler_rules(
                         };
 
                     } else {
-                        error!("received invalid YAML from ruler");
+                        error!("received invalid YAML from ruler: {}", body_text);
                         failed = true;
                         break;
                     }
@@ -258,4 +264,351 @@ pub fn get_tenant_map_from_rules_list(open_metrics_rules: Vec<kube_lib::OpenMetr
         ctr += 1;
     }
     return tenant_specs_k8s
+}
+
+
+#[cfg(test)]
+mod tests {
+    //use kube::{Client, Service};
+
+    //use futures::pin_mut;
+    //use http::{Request, Response};
+    //use hyper::Body;
+    use env_logger;
+    use mockito;
+    use kube_metrics_mutli_tenancy_lib as kube_lib;
+    use crate::rules::rules::{discover_ruler_rules, diff_rule_groups};
+    use serde_yaml;
+    use serde_yaml::Value;
+    use std::collections::HashMap;
+    //use std::collections::HashSet;
+    //use std::iter::FromIterator;
+    //use k8s_openapi::serde_json::Value;
+
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    fn test_fixture_1() -> Value {
+        let s = "
+---
+test:
+  - name: cortexrulegroup1
+    rules:
+        - expr: histogram_quantile(0.99, rate(proxy_processing_duration_ms_bucket[5m]))
+          record: p99:proxy_processing_duration_ms:5m
+        - expr: histogram_quantile(0.95, rate(proxy_processing_duration_ms_bucket[5m]))
+          record: p95:proxy_processing_duration_ms:5m
+        ";
+       serde_yaml::from_str(&s).unwrap()
+    }
+
+    fn test_fixture_2() -> Value {
+        let s = "---
+test:
+  - name: cortexrulegroup1
+    rules:
+        - expr: histogram_quantile(0.99, rate(proxy_processing_duration_ms_bucket[5m]))
+          record: p99:proxy_processing_duration_ms:5m
+        - expr: histogram_quantile(0.95, rate(proxy_processing_duration_ms_bucket[5m]))
+          record: p95:proxy_processing_duration_ms:5m
+  - name: cortexrulegroup2
+    rules:
+        - expr: histogram_quantile(0.5, rate(proxy_processing_duration_ms_bucket[5m]))
+          record: p50:proxy_processing_duration_ms:5m
+        - expr: sum without(code) (proxy_processing_duration_ms)
+          record: proxyallcodes
+        ";
+        serde_yaml::from_str(&s).unwrap()
+    }
+
+    fn client() -> reqwest::Client {
+        reqwest::ClientBuilder::new()
+            .http1_title_case_headers()
+            .build()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_discover_ruler_rules() {
+
+        init();
+
+        let y1 = test_fixture_1();
+        let y2 = test_fixture_2();
+        let r1 = serde_yaml::to_string(&y1).unwrap();
+        let r2 = serde_yaml::to_string(&y2).unwrap();
+
+        let c = client();
+
+        let _m1 = mockito::mock("GET", "/api/v1/rules/test")
+            .with_status(200)
+            .with_header("content-type", "application/yaml")
+            .with_body(r1)
+            .create();
+
+        let _m2 = mockito::mock("GET", "/api/v1/rules/test")
+            .with_status(200)
+            .with_header("content-type", "application/yaml")
+            .with_body(r2)
+            .create();
+
+        let ruler_api_url = mockito::server_url() + &String::from("/");
+
+        let found_rule_groups = discover_ruler_rules(
+            &vec![String::from("tnt1"), String::from("tnt2")],
+            c.clone(),
+            &ruler_api_url,
+            &String::from("test")
+
+        ).await.unwrap();
+
+        let specs_expected_tenant_1 = vec![
+            (kube_lib::GroupSpec {
+                name: String::from("cortexrulegroup1"),
+                interval: None,
+                rules: vec![
+                    kube_lib::RuleSpec {
+                        alert: None,
+                        annotations: None,
+                        expr: String::from("histogram_quantile(0.99, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                        record: Some(String::from("p99:proxy_processing_duration_ms:5m")),
+                        labels: None,
+                        for_: None
+                    },
+                    kube_lib::RuleSpec {
+                        alert: None,
+                        annotations: None,
+                        expr: String::from("histogram_quantile(0.95, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                        record: Some(String::from("p95:proxy_processing_duration_ms:5m")),
+                        labels: None,
+                        for_: None
+                    }
+                ]
+            }, -1)
+        ];
+        let specs_expected_tenant_2 = vec![
+            (kube_lib::GroupSpec {
+                name: String::from("cortexrulegroup1"),
+                interval: None,
+                rules: vec![
+                    kube_lib::RuleSpec {
+                        alert: None,
+                        annotations: None,
+                        expr: String::from("histogram_quantile(0.99, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                        record: Some(String::from("p99:proxy_processing_duration_ms:5m")),
+                        labels: None,
+                        for_: None
+                    },
+                    kube_lib::RuleSpec {
+                        alert: None,
+                        annotations: None,
+                        expr: String::from("histogram_quantile(0.95, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                        record: Some(String::from("p95:proxy_processing_duration_ms:5m")),
+                        labels: None,
+                        for_: None
+                    }
+                ]}, -1),
+            (kube_lib::GroupSpec {
+                name: String::from("cortexrulegroup2"),
+                interval: None,
+                rules: vec![
+                    kube_lib::RuleSpec {
+                        alert: None,
+                        annotations: None,
+                        expr: String::from("histogram_quantile(0.5, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                        record: Some(String::from("p50:proxy_processing_duration_ms:5m")),
+                        labels: None,
+                        for_: None
+                    },
+                    kube_lib::RuleSpec {
+                        alert: None,
+                        annotations: None,
+                        expr: String::from("sum without(code) (proxy_processing_duration_ms)"),
+                        record: Some(String::from("proxyallcodes")),
+                        labels: None,
+                        for_: None
+                    }
+                ]}, -1)
+        ];
+
+        let mut expected_map = HashMap::new();
+        expected_map.insert(String::from("tnt1"), specs_expected_tenant_1);
+        expected_map.insert(String::from("tnt2"), specs_expected_tenant_2);
+
+        assert_eq!(found_rule_groups.keys().len(), 2);
+        assert_eq!(found_rule_groups, expected_map)
+
+    }
+
+    fn test_fixture_3() -> HashMap<String,Vec<(kube_lib::GroupSpec, i64)>> {
+        let mut m = HashMap::new();
+
+        m.insert(
+            String::from("tnt1"),
+            vec![
+                (kube_lib::GroupSpec {
+                    name: String::from("cortexrulegroup1"),
+                    interval: None,
+                    rules: vec![
+                        kube_lib::RuleSpec {
+                            alert: None,
+                            annotations: None,
+                            expr: String::from("histogram_quantile(0.99, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                            record: Some(String::from("p99:proxy_processing_duration_ms:5m")),
+                            labels: None,
+                            for_: None
+                        },
+                        kube_lib::RuleSpec {
+                            alert: None,
+                            annotations: None,
+                            expr: String::from("histogram_quantile(0.95, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                            record: Some(String::from("p95:proxy_processing_duration_ms:5m")),
+                            labels: None,
+                            for_: None
+                        }
+                    ]}, (0 as i64)),
+            ]
+        );
+        m
+    }
+
+    fn test_fixture_4() -> HashMap<String,Vec<(kube_lib::GroupSpec, i64)>> {
+        let mut m = HashMap::new();
+
+        m.insert(
+            String::from("tnt1"),
+            vec![
+                (kube_lib::GroupSpec {
+                    name: String::from("cortexrulegroup1"),
+                    interval: None,
+                    rules: vec![
+                        kube_lib::RuleSpec {
+                            alert: None,
+                            annotations: None,
+                            expr: String::from("histogram_quantile(0.99, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                            record: Some(String::from("p99:proxy_processing_duration_ms:5m")),
+                            labels: None,
+                            for_: None
+                        },
+                        kube_lib::RuleSpec {
+                            alert: None,
+                            annotations: None,
+                            expr: String::from("histogram_quantile(0.98, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                            record: Some(String::from("p95:proxy_processing_duration_ms:5m")),
+                            labels: None,
+                            for_: None
+                        }
+                    ]}, (1 as i64)),
+            ]
+        );
+        m
+    }
+
+    fn test_fixture_5() -> HashMap<String,Vec<(kube_lib::GroupSpec, i64)>> {
+        let mut m = HashMap::new();
+
+        m.insert(
+            String::from("tnt1"),
+            vec![
+                (kube_lib::GroupSpec {
+                    name: String::from("cortexrulegroup2"),
+                    interval: None,
+                    rules: vec![
+                        kube_lib::RuleSpec {
+                            alert: None,
+                            annotations: None,
+                            expr: String::from("histogram_quantile(0.99, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                            record: Some(String::from("p99:proxy_processing_duration_ms:5m")),
+                            labels: None,
+                            for_: None
+                        },
+                        kube_lib::RuleSpec {
+                            alert: None,
+                            annotations: None,
+                            expr: String::from("histogram_quantile(0.98, rate(proxy_processing_duration_ms_bucket[5m]))"),
+                            record: Some(String::from("p95:proxy_processing_duration_ms:5m")),
+                            labels: None,
+                            for_: None
+                        }
+                    ]}, (1 as i64)),
+            ]
+        );
+        m
+    }
+
+    #[tokio::test]
+    async fn test_diff_rule_groups_1_no_diff() {
+        let groups1 = test_fixture_3();
+        let groups2 = test_fixture_3();
+
+        let (adds, removes) = diff_rule_groups(groups1, groups2);
+
+        // No diff found
+        assert_eq!(adds.len(), 0);
+        assert_eq!(removes.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_diff_rule_groups_2_small_diff() {
+        let groups1 = test_fixture_3();
+        let groups2 = test_fixture_4();
+
+        let (adds, removes) = diff_rule_groups(groups1, groups2);
+
+        // Only one addition exists
+        assert_eq!(adds.len(), 1);
+        assert_eq!(removes.len(), 0);
+
+        // A group named "adds" from tenant at position "1" should be added
+        let gv = adds.get("tnt1").unwrap();
+        let (g, i) = gv.get(0).unwrap();
+        assert_eq!(g.name, "cortexrulegroup1");
+        assert_eq!(i, &(1 as i64));
+    }
+
+    #[tokio::test]
+    async fn test_diff_rule_groups_3_remove_group() {
+        let groups1 = test_fixture_3();
+        let groups2 = HashMap::new();
+
+        let (adds, removes) = diff_rule_groups(groups1, groups2);
+
+        // Only one removal exists
+        assert_eq!(adds.len(), 0);
+        assert_eq!(removes.len(), 1);
+
+        // A group named "cortexrulegroup1" from tenant at position "0" should be removed
+        let gv = removes.get("tnt1").unwrap();
+        let (g, i) = gv.get(0).unwrap();
+        assert_eq!(g.name, "cortexrulegroup1");
+        assert_eq!(i, &(0 as i64));
+    }
+
+    #[tokio::test]
+    async fn test_diff_rule_groups_4_replace_group() {
+        let groups1 = test_fixture_3();
+        let groups2 = test_fixture_5();
+
+        let (adds, removes) = diff_rule_groups(groups1, groups2);
+
+        // No diff found
+        assert_eq!(adds.len(), 1);
+        assert_eq!(removes.len(), 1);
+
+       // One group to be removed, while other to be added.
+        let gv_a = adds.get("tnt1").unwrap();
+        let (g_a, i_a) = gv_a.get(0).unwrap();
+
+        let gv_r = removes.get("tnt1").unwrap();
+        let (g_r, i_r) = gv_r.get(0).unwrap();
+
+        // group to be added
+        assert_eq!(g_a.name, "cortexrulegroup2");
+        assert_eq!(i_a, &(1 as i64));
+
+        // group to be removed
+        assert_eq!(g_r.name, "cortexrulegroup1");
+        assert_eq!(i_r, &(0 as i64));
+    }
 }

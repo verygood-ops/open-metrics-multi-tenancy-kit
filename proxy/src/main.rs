@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![deny(redundant_semicolons)]
 extern crate serde_derive;
 
 use std::collections::HashMap;
@@ -9,9 +10,10 @@ use std::sync::Arc;
 
 use argh::FromArgs;
 use env_logger;
+use kube::Client;
 use log::error;
 use prometheus::{
-    register_histogram, Counter, CounterVec, Encoder, Histogram, Opts, Registry, TextEncoder,
+    register_histogram, Counter, IntCounterVec, Encoder, Histogram, Opts, Registry, TextEncoder,
 };
 use reqwest::header::HeaderValue;
 use tokio;
@@ -154,11 +156,11 @@ async fn main() {
 
     // Prometheus metrics
     let num_series_opts = Opts::new("open_metrics_proxy_series", "number of series");
-    let num_series = CounterVec::new(num_series_opts, &["tenant_id"]).unwrap();
+    let num_series = IntCounterVec::new(num_series_opts, &["tenant_id"]).unwrap();
     r.register(Box::new(num_series.clone())).unwrap();
 
-    let total_requests_opts = Opts::new("open_metrics_proxy_requests", "number of series");
-    let total_requests = CounterVec::new(total_requests_opts, &["tenant_id"]).unwrap();
+    let total_requests_opts = Opts::new("open_metrics_proxy_requests", "number of requests");
+    let total_requests = IntCounterVec::new(total_requests_opts, &["tenant_id"]).unwrap();
     r.register(Box::new(total_requests.clone())).unwrap();
 
     let num_failures_opts = Opts::new("open_metrics_proxy_failures", "number of series");
@@ -185,7 +187,7 @@ async fn main() {
     .unwrap();
     r.register(Box::new(histogram.clone())).unwrap();
 
-    let mut counter_vecs = HashMap::<u8, CounterVec>::new();
+    let mut counter_vecs = HashMap::<u8, IntCounterVec>::new();
     counter_vecs.insert(ForwardingStatistics::TotalRequests as u8, total_requests);
     counter_vecs.insert(ForwardingStatistics::NumSeries as u8, num_series);
 
@@ -205,13 +207,13 @@ async fn main() {
         param_bool: bool,
     ) -> impl Filter<Extract = (bool,), Error = Infallible> + Clone {
         warp::any().map(move || param_bool.clone())
-    };
+    }
 
     fn with_parameter_vec(
         param_vec: Vec<String>,
     ) -> impl Filter<Extract = (Vec<String>,), Error = Infallible> + Clone {
         warp::any().map(move || param_vec.clone())
-    };
+    }
 
     fn with_ingester_url(
         ingester_url: String,
@@ -226,8 +228,8 @@ async fn main() {
     }
 
     fn with_counters_vec(
-        __counter_vecs: HashMap<u8, CounterVec>,
-    ) -> impl Filter<Extract = (HashMap<u8, CounterVec>,), Error = Infallible> + Clone {
+        __counter_vecs: HashMap<u8, IntCounterVec>,
+    ) -> impl Filter<Extract = (HashMap<u8, IntCounterVec>,), Error = Infallible> + Clone {
         warp::any().map(move || __counter_vecs.clone())
     }
 
@@ -311,12 +313,22 @@ async fn main() {
             String::from_utf8(buffer).unwrap()
         });
 
+    let k8s_client = if k8s_poll_interval_seconds > 0 {
+        // Initialize k8s client
+        match Client::try_default().await {
+            Ok(v) => Some(v),
+            Err(e) => {
+                error!("Failed to instantiate k8s client: {}", e.to_string());
+                None
+            }
+        }
+    } else {None};
 
     // init controller parameters
     let mut c = CONTROLLER.write().await;
     c.set_initial_allowed_tenants(allow_listed_tenants)
         .set_k8s_poll_delay((k8s_poll_interval_seconds * 1000) as u64);
-    tokio::task::spawn(worker());
+    tokio::task::spawn(worker(k8s_client.clone()));
     drop(c);
 
     let listen_addr = interface.parse::<Ipv4Addr>();
