@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use argh::FromArgs;
 use env_logger;
+use kube::Client;
 use log::error;
 use prometheus::{
     register_histogram, Counter, CounterVec, Encoder, Histogram, Opts, Registry, TextEncoder,
@@ -311,12 +312,22 @@ async fn main() {
             String::from_utf8(buffer).unwrap()
         });
 
+    let k8s_client = if k8s_poll_interval_seconds > 0 {
+        // Initialize k8s client
+        match Client::try_default().await {
+            Ok(v) => Some(v),
+            Err(e) => {
+                error!("Failed to instantiate k8s client: {}", e.to_string());
+                None
+            }
+        }
+    } else {None};
 
     // init controller parameters
     let mut c = CONTROLLER.write().await;
     c.set_initial_allowed_tenants(allow_listed_tenants)
         .set_k8s_poll_delay((k8s_poll_interval_seconds * 1000) as u64);
-    tokio::task::spawn(worker());
+    tokio::task::spawn(worker(k8s_client.clone()));
     drop(c);
 
     let listen_addr = interface.parse::<Ipv4Addr>();
