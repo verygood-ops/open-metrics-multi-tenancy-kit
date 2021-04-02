@@ -14,13 +14,16 @@ via command line, or specified via `IngestionTenant` k8s resources, managed by C
 Rule And Alert Management
 -------------------------
 Rules and Alerts are set up via k8s resources.
-A controller component loads rules into Cortex.
-A webhook component validates rules and alerts submitted.
+An informer component loads rules into Cortex.
 `OpenMetricsRule` -- specifies open metrics recording rule
 `OpenMetricsAlert` -- specifies open metrics alert
 
 Open metrics exposition
 -----------------------
+TBD.
+
+Rule expression validation
+--------------------------
 TBD.
 
 How to build
