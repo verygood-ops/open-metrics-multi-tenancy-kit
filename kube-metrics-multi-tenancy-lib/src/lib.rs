@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![deny(redundant_semicolons)]
 use std::collections::{HashMap,HashSet};
 
 use kube::{Api, Client, CustomResource, api::ListParams};

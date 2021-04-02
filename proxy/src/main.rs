@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![deny(redundant_semicolons)]
 extern crate serde_derive;
 
 use std::collections::HashMap;
@@ -206,13 +207,13 @@ async fn main() {
         param_bool: bool,
     ) -> impl Filter<Extract = (bool,), Error = Infallible> + Clone {
         warp::any().map(move || param_bool.clone())
-    };
+    }
 
     fn with_parameter_vec(
         param_vec: Vec<String>,
     ) -> impl Filter<Extract = (Vec<String>,), Error = Infallible> + Clone {
         warp::any().map(move || param_vec.clone())
-    };
+    }
 
     fn with_ingester_url(
         ingester_url: String,

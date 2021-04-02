@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![deny(redundant_semicolons)]
 use log::{debug, error, warn};
 use argh::FromArgs;
 
