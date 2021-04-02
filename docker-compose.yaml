@@ -1,0 +1,10 @@
+version: "3.5"
+services:
+  infomer:
+    build:
+      dockerfile: informer/Dockerfile
+      context: .
+  proxy:
+    build:
+      dockerfile: proxy/Dockerfile
+      context: .

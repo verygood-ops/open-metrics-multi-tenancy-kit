@@ -26,19 +26,32 @@ TBD.
 How to build
 -------------
 
-`cargo build`
+Local:
 
+1) [Install Rust](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+2) `cargo build`
+
+Docker:
+
+`docker-compose build`
 
 How to test
 -----------
+
+Local:
 
 ```
 RUST_LOG=debug RUST_BACKTRACE=full cargo test -- --nocapture
 ```
 
+Docker:
+
+`docker-compose test`
 
 How to run
 ----------
+Local:
+
 Run proxy
 ```
 RUST_LOG=debug RUST_BACKTRACE=full cargo run \
@@ -51,3 +64,7 @@ Run informer
 RUST_LOG=debug RUST_BACKTRACE=full cargo run \
     --bin open-metrics-multi-tenancy-informer
 ```
+
+Docker:
+
+`docker-compose up`
