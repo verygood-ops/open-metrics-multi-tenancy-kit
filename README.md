@@ -39,9 +39,15 @@ RUST_LOG=debug RUST_BACKTRACE=full cargo test -- --nocapture
 
 How to run
 ----------
+Run proxy
+```
+RUST_LOG=debug RUST_BACKTRACE=full cargo run \
+    --bin open-metrics-multi-tenancy-proxy
+```
+
+Run informer
 
 ```
-RUST_BACKTRACE=full RUST_LOG=debug cargo run -- \
-    --ingester-upstream-url <CORTEX_INGESTER_URL>
+RUST_LOG=debug RUST_BACKTRACE=full cargo run \
+    --bin open-metrics-multi-tenancy-informer
 ```
-
