@@ -33,6 +33,14 @@ How to test
 -----------
 
 ```
+RUST_LOG=debug RUST_BACKTRACE=full cargo test -- --nocapture
+```
+
+
+How to run
+----------
+
+```
 RUST_BACKTRACE=full RUST_LOG=debug cargo run -- \
     --ingester-upstream-url <CORTEX_INGESTER_URL>
 ```
