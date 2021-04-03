@@ -87,7 +87,7 @@ RUST_LOG=debug RUST_BACKTRACE=full cargo test -- --nocapture
 
 Docker:
 
-`docker-compose test`
+`docker-compose run test`
 
 How to run
 ----------
