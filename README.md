@@ -2,7 +2,42 @@ open-metrics-multi-tenancy-kit
 =================================
 
 `open-metrics-multi-tenancy-kit` implements multi-tenancy for metrics collection,
-rules management and exposition in Cortex environments.
+rules management and exposition in Cortex environments, via `OpenMetricsRule`
+Kubernetes resource.
+
+An example `OpenMetricsRule` is below.
+
+```
+apiVersion: "open-metrics.vgs.io/v1"
+kind: "OpenMetricsRule"
+metadata:
+  name: open-metrics-test
+  namespace: open-metrics-test
+spec:
+  tenants:
+    - "backoffice"
+    - "frontend"
+  description: "A hello world rule for recording and alerting."
+  groups:
+
+    - name: open_metrics_rule_record_v0
+      interval: 1m
+      rules:
+        - expr: histogram_quantile(0.99, rate(http_request_processing_duration_ms_bucket[5m]))
+          record: p99:http_request_duration_ms:5m
+        - expr: histogram_quantile(0.99, rate(http_request_processing_duration_ms_bucket[2m]))
+          record: p99:http_request_duration_ms:2m
+
+    - name: open_metrics_rule_alert_v0
+      rules:
+        - expr: p99:http_request_duration_ms:5m > 400
+          for: 5m
+          alert: HttpRequestProcessingP99TooLarge
+          labels:
+            severity: critical
+```
+
+
 
 Metrics collection multi-tenancy
 --------------------------------
@@ -38,14 +73,14 @@ Local:
 1) [Install Rust](https://doc.rust-lang.org/cargo/getting-started/installation.html)
 2) `cargo build`
 
-Docker:
+In docker,
 
 `docker-compose build`
 
 How to test
 -----------
 
-Local:
+On localhost,
 
 ```
 RUST_LOG=debug RUST_BACKTRACE=full cargo test -- --nocapture
@@ -57,7 +92,7 @@ Docker:
 
 How to run
 ----------
-Local:
+On localhost,
 
 Run proxy
 ```
@@ -72,7 +107,7 @@ RUST_LOG=debug RUST_BACKTRACE=full cargo run \
     --bin open-metrics-multi-tenancy-informer
 ```
 
-Docker:
+In Docker,
 
 `docker-compose up`
 
@@ -80,21 +115,23 @@ Docker:
 How to monitor
 --------------
 
-A proxy exposes following Prometheus metrics:
+Use Prometheus!
 
-`open_metrics_proxy_requests`           -- number of requests to distributor, per tenant
-`open_metrics_proxy_series`             -- number of forwarded series, per tenant
-`open_metrics_proxy_failures`           -- number of forwarding errors, per process
-`open_metrics_proxy_labels`             -- number of requests to distributor, per process
-`open_metrics_proxy_metadata`           -- number of metrics metadata seen (usually for each kind of metrics forwarded once)
-`open_metrics_proxy_processing_ms`      -- histogram of durations
+A proxy component exposes following Prometheus metrics:
 
-An informer exposes following prometheus metrics:
+- `open_metrics_proxy_requests`           -- number of requests to distributor, per tenant
+- `open_metrics_proxy_series`             -- number of forwarded series, per tenant
+- `open_metrics_proxy_failures`           -- number of forwarding errors, per process
+- `open_metrics_proxy_labels`             -- number of requests to distributor, per process
+- `open_metrics_proxy_metadata`           -- number of metrics metadata seen (usually for each kind of metrics forwarded once)
+- `open_metrics_proxy_processing_ms`      -- histogram of durations
 
-`open_metrics_informer_tracker_rules`   -- number of rules seen by tracker, per tenant
-`open_metrics_informer_tracker_tenants` -- increases each time new tenant seen in tracker rules, per tenant
-`open_metrics_informer_updater_rules`   -- number of rules seen by updater, per tenant
-`open_metrics_informer_updater_tenants` -- increases each time new tenant seen in updater rules, per tenant
+An informer component exposes following prometheus metrics:
+
+- `open_metrics_informer_tracker_rules`   -- number of rules seen by tracker, per tenant
+- `open_metrics_informer_tracker_tenants` -- increases each time new tenant seen in tracker rules, per tenant
+- `open_metrics_informer_updater_rules`   -- number of rules seen by updater, per tenant
+- `open_metrics_informer_updater_tenants` -- increases each time new tenant seen in updater rules, per tenant
 
 
 Known limitations
