@@ -1,4 +1,4 @@
-FROM rust:1.51.0-buster AS builder
+FROM rust:1.51.0-bullseye AS builder
 ARG CARGO_BUILD_ARGS="--release"
 USER root
 RUN apt-get update

@@ -1,4 +1,4 @@
-FROM rust:1.51.0-buster AS builder
+FROM rust:1.51.0-bullseye AS builder
 ARG CARGO_BUILD_ARGS="--release"
 USER root
 RUN apt-get update
@@ -20,7 +20,7 @@ ADD proxy/src/ proxy/src/
 RUN cargo build ${CARGO_BUILD_ARGS} --target x86_64-unknown-linux-gnu --bin open-metrics-multi-tenancy-proxy
 RUN cargo install --target x86_64-unknown-linux-gnu --path=proxy/
 
-FROM quay.io/verygoodsecurity/debian:buster-slim
+FROM debian:bullseye-slim
 RUN apt-get -y update && apt-get -y install libssl1.1
 COPY --from=builder /usr/local/cargo/bin/open-metrics-multi-tenancy-proxy /usr/bin/open-metrics-multi-tenancy-proxy
 ENTRYPOINT ["/usr/bin/open-metrics-multi-tenancy-proxy"]
