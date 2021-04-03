@@ -1,9 +1,8 @@
 open-metrics-multi-tenancy-kit
 =================================
 
-`open-metrics-multi-tenancy-kit` implements multi-tenancy for metrics collection,
-rules management and exposition in Cortex environments, via `OpenMetricsRule`
-Kubernetes resource.
+`open-metrics-multi-tenancy-kit` implements multi-tenancy for metrics collection and
+rules management in Cortex environments, configured via `OpenMetricsRule` Kubernetes resource.
 
 An example `OpenMetricsRule` is below.
 
