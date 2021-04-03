@@ -6,6 +6,8 @@ use std::time::Instant;
 use std::sync::Arc;
 
 use log::debug;
+use prometheus::{Counter, IntCounterVec, Histogram};
+use proto::prometheus::{MetricMetadata, WriteRequest};
 use protobuf::Message;
 use snap;
 use tokio::task::JoinError;
@@ -14,8 +16,7 @@ use warp::http::StatusCode;
 use crate::metrics;
 use crate::proto;
 use metrics::metrics::process_time_serie;
-use prometheus::{Counter, IntCounterVec, Histogram};
-use proto::prometheus::{MetricMetadata, WriteRequest};
+
 
 pub enum ForwardingStatistics {
     NumSeries = 0,

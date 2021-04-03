@@ -1,15 +1,15 @@
-use kube_metrics_mutli_tenancy_lib as kube_lib;
-use log::{debug,info,error};
-
-use kube::{Api,Client};
-use reqwest::Client as RClient;
-use prometheus::IntCounterVec;
-use tokio::time::interval;
 use std::iter::FromIterator;
 use std::time::Duration;
 
+use kube::{Api,Client};
+use log::{debug,info,error};
+use reqwest::Client as RClient;
+use prometheus::IntCounterVec;
+use tokio::time::interval;
+
 use crate::crud::crud;
 use crate::rules::rules;
+use kube_metrics_mutli_tenancy_lib as kube_lib;
 
 // Periodically discover rules from Cortex.
 // Update Rules CRD in k8s

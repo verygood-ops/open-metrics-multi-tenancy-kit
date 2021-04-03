@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use kube_metrics_mutli_tenancy_lib as kube_lib;
 use log::{debug,error,trace,warn};
 use reqwest::Client as RClient;
+
+use kube_metrics_mutli_tenancy_lib as kube_lib;
 
 
 // This method is complex, since it is instruments both k8s and cortex.

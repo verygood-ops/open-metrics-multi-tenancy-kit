@@ -1,23 +1,26 @@
 open-metrics-multi-tenancy-kit
 =================================
 
-OM-mt-K allows to implement multi-tenancy for metrics collection,
-rule and alert management, and exposition in Ruler environments.
+`open-metrics-multi-tenancy-kit` implements multi-tenancy for metrics collection,
+rules management and exposition in Cortex environments.
 
 Metrics collection multi-tenancy
 --------------------------------
 A proxy component introspects Prometheus GRPC metrics `remote_write` stream,
-injects tenants in accordance to https://cortexmetrics.io/docs/guides/auth/,
-and forwards requests to specified upstream. Tenants can be either enabled
+injects tenants in accordance to 
+[Cortex Authentication and Authorization](https://cortexmetrics.io/docs/guides/auth/),
+and forwards requests to specified upstream. Tenants can be specified either
 via command line, or specified via `spec.tenants` property of 
 `OpenMetricsRule` Kubernetes resource.
 
+See `proxy/README.md` for futher details on `open-metrics-multi-tenancy-proxy` functioning.
+
 Rule And Alert Management
 -------------------------
-Rules and Alerts are set up via k8s resources.
+Metrics rules, both tecording and alerting are set up via `OpenMetricsRule` Kubernetes resources.
 An informer component loads rules into Ruler.
 
-- `OpenMetricsRule` -- specifies open metrics recording or alerting rule
+See `informer/README.md` for futher details on `open-metrics-multi-tenancy-proxy` functioning.
 
 Open metrics exposition
 -----------------------
@@ -92,3 +95,10 @@ An informer exposes following prometheus metrics:
 `open_metrics_informer_tracker_tenants` -- increases each time new tenant seen in tracker rules, per tenant
 `open_metrics_informer_updater_rules`   -- number of rules seen by updater, per tenant
 `open_metrics_informer_updater_tenants` -- increases each time new tenant seen in updater rules, per tenant
+
+
+Known limitations
+------------------
+- no validation for duplicated recording rules or alerts
+- no support for multiple Kubernetes namespaces
+- no real health check for proxy or informer (can be remediated by using Prometheus metrics)

@@ -1,8 +1,8 @@
 #![deny(warnings)]
 use std::collections::HashMap;
 
-use crate::proto;
-use proto::prometheus::{TimeSeries, WriteRequest};
+use crate::proto::prometheus::{TimeSeries, WriteRequest};
+
 
 fn process_time_serie_for_tenant(
     time_series: &TimeSeries,

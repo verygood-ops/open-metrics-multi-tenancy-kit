@@ -2,15 +2,14 @@ use std::iter::FromIterator;
 use std::time::Duration;
 
 use kube::Client;
-use kube_metrics_mutli_tenancy_lib as kube_lib;
 use log::{debug,error,info};
-
-use reqwest::Client as RClient;
 use prometheus::IntCounterVec;
+use reqwest::Client as RClient;
 use tokio::time::interval;
 
 use crate::crud::crud;
 use crate::rules::rules;
+use kube_metrics_mutli_tenancy_lib as kube_lib;
 
 
 // Periodically discover rules from Cortex.

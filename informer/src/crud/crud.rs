@@ -1,9 +1,9 @@
-use kube_metrics_mutli_tenancy_lib as kube_lib;
-use log::{debug,error,info};
 use kube::{Api,Client,api::{Patch,PatchParams}};
+use log::{debug,error,info};
 use reqwest::Client as RClient;
 use reqwest::{Response,Error};
 
+use kube_metrics_mutli_tenancy_lib as kube_lib;
 use crate::rules::rules;
 
 

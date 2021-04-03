@@ -18,10 +18,14 @@ Generally the latter is not advised,
 Command line options
 --------------------
 
-A proxy application always serves metrics on 127.0.0.1.
+An informer application always serves metrics on 127.0.0.1.
 
 - `--port` -- A port for retrieving metrics (default: 20093)
 - `--ruler-upstream-url` -- An upstream URL of Ruler service
 - `--tracker-poll-interval-seconds` -- An interval of seconds between tracker polls.
 - `--updater-poll-interval-seconds` -- An interval of seconds between updater polls.
 - `--enable-updater-remove-rules` -- Updater does not remove k8s resources by default. Pass this flag to enable removal.
+
+Known limitations
+-----------------
+Running more than single `informer` is not supported at this moment.
