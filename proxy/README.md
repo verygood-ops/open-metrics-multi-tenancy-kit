@@ -54,3 +54,7 @@ A proxy application always listens on 127.0.0.1.
 - `--max-parallel-request-per-load`     -- max number of downstream requests to invoke in parallel when proxying single request
 - `--allow-listed-tenants`              -- a comma-separated list of tenants to use for allow-listing
 - `--kubernetes-poll-interval-seconds`  -- number of seconds between polling `MetricsIngestionTenant` resources. pass `0` to disable polling Kubernetes.
+
+Environment variables
+---------------------
+- `OPEN_METRICS_PROXY_NAMESPACE`        -- a namespace to observe for `OpenMetricsRule` resources

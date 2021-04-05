@@ -26,6 +26,10 @@ An informer application always serves metrics on 127.0.0.1.
 - `--updater-poll-interval-seconds` -- An interval of seconds between updater polls.
 - `--enable-updater-remove-rules` -- Updater does not remove k8s resources by default. Pass this flag to enable removal.
 
+Environment variables
+---------------------
+- `OPEN_METRICS_INFORMER_NAMESPACE`        -- a namespace to observe for `OpenMetricsRule` resources, and to update in Cortex
+
 Known limitations
 -----------------
 Running more than single `informer` is not supported at this moment.
