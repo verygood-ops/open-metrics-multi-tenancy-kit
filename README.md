@@ -47,14 +47,14 @@ and forwards requests to specified upstream. Tenants can be specified either
 via command line, or specified via `spec.tenants` property of 
 `OpenMetricsRule` Kubernetes resource.
 
-See `proxy/README.md` for futher details on `open-metrics-multi-tenancy-proxy` functioning.
+See [proxy/README.md](proxy/README.md) for futher details on `open-metrics-multi-tenancy-proxy` functioning.
 
 Rule And Alert Management
 -------------------------
 Metrics rules, both tecording and alerting are set up via `OpenMetricsRule` Kubernetes resources.
 An informer component loads rules into Ruler.
 
-See `informer/README.md` for futher details on `open-metrics-multi-tenancy-proxy` functioning.
+See [informer/README.md](informer/README.md) for futher details on `open-metrics-multi-tenancy-proxy` functioning.
 
 Open metrics exposition
 -----------------------
