@@ -131,6 +131,7 @@ pub struct OpenMetricsRuleSpec {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tenants: Vec<String>,
     // A rule description, optional
+    #[serde(skip_serializing_if="Option::is_none")]
     pub description: Option<String>,
     // Rule groups list
 
