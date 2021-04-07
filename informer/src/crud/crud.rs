@@ -1,5 +1,5 @@
 use kube::{Api,Client,api::{Patch,PatchParams}};
-use log::{debug,error,info};
+use log::{debug,error,info,warn};
 use reqwest::Client as RClient;
 use reqwest::{Response,Error};
 
@@ -15,7 +15,11 @@ async fn check_response_202(response: Result<Response,Error>) {
             match r.text().await {
                 Ok(t) => {
                     info!("received ruler response {}, text {}", s.to_string(), t);
-                    assert_eq!(s, 202)
+                    if s == 202 {
+                        debug!("successfully updated rule")
+                    } else {
+                        warn!("ruler response is not 202; text: {}", t)
+                    }
                 },
                 Err(e) => {
                     error!("failed to receive ruler response body: {}", e);
@@ -140,6 +144,8 @@ pub async fn resource_updated(api: &Api<kube_lib::OpenMetricsRule>, resource_nam
     let status = kube_lib::OpenMetricsRuleStatus {
         ruler_updated: true
     };
+    // managed fields might be set when querying
+    open_metrics_rule.metadata.managed_fields = None;
     open_metrics_rule.status = Some(status);
     let ssapply = PatchParams::apply("openmetricsrule").force();
     match api.patch(
