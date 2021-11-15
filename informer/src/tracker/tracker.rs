@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::time::Duration;
 
 use kube::Client;
@@ -17,6 +16,8 @@ use kube_metrics_mutli_tenancy_lib as kube_lib;
 pub async fn tracker(k8s_client: Client,
                      ruler_client: RClient,
                      ruler_api_url: String,
+                     distributor_client: RClient,
+                     distributor_api_url: String,
                      num_rules: Box<IntCounterVec>,
                      num_tenants: Box<IntCounterVec>,
                      ms: u64) {
@@ -28,13 +29,12 @@ pub async fn tracker(k8s_client: Client,
     loop {
         interval.tick().await;
 
-        match kube_lib::get_tenant_ids(
-            k8s_client.clone(), &namespace).await {
-            Ok(tenants_rules) => {
-                debug!("Going to discover rules for {} tenants.", tenants_rules.len());
-                let tenant_vec: Vec<String> = Vec::from_iter(tenants_rules);
+        match crud::load_tenants_from_distributor(
+            distributor_client.clone(), &distributor_api_url.clone()).await {
+            Ok(tenant_vec) => {
+                debug!("Going to discover rules for {} tenants.", tenant_vec.len());
                 match rules::discover_ruler_rules(
-                    &tenant_vec,
+                    &tenant_vec.clone(),
                     ruler_client.clone(),
                     &ruler_api_url.clone(),
                     &namespace,

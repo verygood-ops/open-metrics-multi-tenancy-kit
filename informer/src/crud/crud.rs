@@ -2,6 +2,7 @@ use kube::{Api,Client,api::{Patch,PatchParams}};
 use log::{debug,error,info,warn};
 use reqwest::Client as RClient;
 use reqwest::{Response,Error};
+use serde::Deserialize;
 
 use kube_metrics_mutli_tenancy_lib as kube_lib;
 use crate::rules::rules;
@@ -30,6 +31,55 @@ async fn check_response_202(response: Result<Response,Error>) {
             error!("failed to update ruler, abort: {}", e);
         }
     }
+}
+
+#[derive(Deserialize)]
+struct UserStat {
+    #[serde(rename(deserialize = "userID"))]
+    user_id: String,
+}
+
+// Extracting tenant list from UserStats. "zero" tenant excluded.
+async fn extract_tenants(response: Result<Response, Error>) -> Result<Vec<String>, Error> {
+    match response {
+        Ok(resp) => {
+            let status = resp.status();
+            match resp.json::<Vec<UserStat>>().await {
+                Ok(user_stats) => {
+                    debug!("successfully parsed user stats");
+                    let tenant_vec: Vec<String> = user_stats.iter()
+                        .map(|user_stat| user_stat.user_id.clone())
+                        .filter(|id| id != "0")
+                        .collect();
+                    info!("received distributor response: {}, parsed tenants: {:?}", status.to_string(), tenant_vec);
+                    Ok(tenant_vec)
+                }
+                Err(e) => {
+                    error!("failed to parse distributor response body: {}", e);
+                    Err(e)
+                }
+            }
+        }
+        Err(e) => {
+            error!("failed to read data from distributor, abort: {}", e);
+            Err(e)
+        }
+    }
+}
+
+// get tenants from a Distributor
+pub async fn load_tenants_from_distributor(
+    client: RClient,
+    distributor_api_url: &String) -> Result<Vec<String>, Error> {
+    let url = distributor_api_url.clone() + "distributor/all_user_stats";
+    debug!("distributor URL is {}, going to read data", url);
+
+
+    let response = client.get(&url)
+        .send()
+        .await;
+
+    extract_tenants(response).await
 }
 
 // update ruler inside rule
@@ -161,4 +211,125 @@ pub async fn resource_updated(api: &Api<kube_lib::OpenMetricsRule>, resource_nam
             error!("failed to apply rule: {} because of {}", e, &resource_name);
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use log::debug;
+    use serde_json::Value;
+
+    use crate::crud::crud::load_tenants_from_distributor;
+
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    fn client() -> reqwest::Client {
+        reqwest::ClientBuilder::new()
+            .http1_title_case_headers()
+            .build()
+            .unwrap()
+    }
+
+    fn test_fixture() -> Value {
+        let s = r#"[
+{"userID":"0","ingestionRate":19897.548317860346,"numSeries":4033570,"APIIngestionRate":16398.35078884816,"RuleIngestionRate":3499.1975290121827},
+{"userID":"tntimulpey0","ingestionRate":258.3845283139957,"numSeries":4479,"APIIngestionRate":258.3845283139957,"RuleIngestionRate":0},
+{"userID":"tnt5ihx8vw2","ingestionRate":94.72447272610466,"numSeries":2115,"APIIngestionRate":87.21010958247322,"RuleIngestionRate":7.514363143631437},
+{"userID":"tntgwgis7t4","ingestionRate":49.4930170232766,"numSeries":730,"APIIngestionRate":49.4930170232766,"RuleIngestionRate":0}
+]"#;
+
+        serde_json::from_str(&s).unwrap()
+    }
+
+    fn test_fixture_zero_tenant() -> Value {
+        let s = r#"[
+{"userID":"0","ingestionRate":19897.548317860346,"numSeries":4033570,"APIIngestionRate":16398.35078884816,"RuleIngestionRate":3499.1975290121827}
+]"#;
+
+        serde_json::from_str(&s).unwrap()
+    }
+
+    fn test_fixture_empty() -> Value {
+        let s = r#"[
+{"userID":"0","ingestionRate":19897.548317860346,"numSeries":4033570,"APIIngestionRate":16398.35078884816,"RuleIngestionRate":3499.1975290121827}
+]"#;
+
+        serde_json::from_str(&s).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_load_tenants() {
+        init();
+
+        let y1 = test_fixture();
+        let r1 = serde_json::to_string(&y1).unwrap();
+
+        let _m1 = mockito::mock("GET", "/distributor/all_user_stats")
+            .with_status(200)
+            .with_header("content-type", "text/plain; charset=utf-8")
+            .with_body(r1.clone())
+            .create();
+
+        let c = client();
+
+        let distributor_api_url = mockito::server_url() + &String::from("/");
+
+        let tenant_vec = load_tenants_from_distributor(c.clone(), &distributor_api_url).await.unwrap();
+
+        debug!("{:?}", tenant_vec);
+
+        assert!(tenant_vec.contains(&"tntimulpey0".to_owned()));
+        assert!(tenant_vec.contains(&"tnt5ihx8vw2".to_owned()));
+        assert!(tenant_vec.contains(&"tntgwgis7t4".to_owned()));
+        assert_eq!(tenant_vec.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_load_tenants_zero_tenant() {
+        init();
+
+        let y1 = test_fixture_zero_tenant();
+        let r1 = serde_json::to_string(&y1).unwrap();
+
+        let _m1 = mockito::mock("GET", "/distributor/all_user_stats")
+            .with_status(200)
+            .with_header("content-type", "text/plain; charset=utf-8")
+            .with_body(r1.clone())
+            .create();
+
+        let c = client();
+
+        let distributor_api_url = mockito::server_url() + &String::from("/");
+
+        let tenant_vec = load_tenants_from_distributor(c.clone(), &distributor_api_url).await.unwrap();
+
+        debug!("{:?}", tenant_vec);
+
+        assert_eq!(tenant_vec.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_load_tenants_empty() {
+        init();
+
+        let y1 = test_fixture_empty();
+        let r1 = serde_json::to_string(&y1).unwrap();
+
+        let _m1 = mockito::mock("GET", "/distributor/all_user_stats")
+            .with_status(200)
+            .with_header("content-type", "text/plain; charset=utf-8")
+            .with_body(r1.clone())
+            .create();
+
+        let c = client();
+
+        let distributor_api_url = mockito::server_url() + &String::from("/");
+
+        let tenant_vec = load_tenants_from_distributor(c.clone(), &distributor_api_url).await.unwrap();
+
+        debug!("{:?}", tenant_vec);
+
+        assert_eq!(tenant_vec.len(), 0);
+    }
 }

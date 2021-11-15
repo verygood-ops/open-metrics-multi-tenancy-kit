@@ -15,6 +15,7 @@ use prometheus::{
 use tokio;
 use tokio::time::interval;
 use env_logger;
+use reqwest::header::ACCEPT;
 use reqwest::header::HeaderValue;
 use warp::log as http_log;
 use warp::Filter;
@@ -45,6 +46,10 @@ struct OpenMetricsInformerArgs {
     /// upstream url of cortex ruler deployment
     #[argh(option, default = "String::from(\"http://127.0.0.1:8080/\")")]
     ruler_upstream_url: String,
+
+    /// upstream url of cortex distributor deployment
+    #[argh(option, default = "String::from(\"http://127.0.0.1:8080/\")")]
+    distributor_upstream_url: String,
 
     /// start Kubernetes controller for IngestionTenant CRD
     #[argh(option, default = "default_tracker_interval()")]
@@ -80,6 +85,7 @@ pub async fn main() {
 
     let interface = args.interface.clone().to_owned();
     let ruler_upstream_url = args.ruler_upstream_url.clone().to_owned();
+    let distributor_upstream_url = args.distributor_upstream_url.clone().to_owned();
     let tracker_poll_interval_seconds = args.tracker_poll_interval_seconds.clone().to_owned();
     let updater_poll_interval_seconds = args.updater_poll_interval_seconds.clone().to_owned();
 
@@ -138,18 +144,32 @@ pub async fn main() {
         let listen_addr = interface.parse::<Ipv4Addr>();
 
         // reqwest machinery all safe to unwrap since headers are static
-        let mut headers = reqwest::header::HeaderMap::new();
+        let mut ruler_headers = reqwest::header::HeaderMap::new();
 
         // remote write protocol version header
-        headers.insert(
+        ruler_headers.insert(
             "X-Prometheus-Remote-Write-Version",
             HeaderValue::from_str("0.1.0").unwrap(),
         );
-        headers.insert("User-Agent", HeaderValue::from_str("OM_mt_I").unwrap());
+        ruler_headers.insert("User-Agent", HeaderValue::from_str("OM_mt_I").unwrap());
 
         // shared client instance
         let ruler_client = reqwest::ClientBuilder::new()
-            .default_headers(headers)
+            .default_headers(ruler_headers)
+            .http1_title_case_headers()
+            .build()
+            .unwrap();
+
+        // reqwest machinery all safe to unwrap since headers are static
+        let mut distributor_headers = reqwest::header::HeaderMap::new();
+
+        distributor_headers.insert(
+            ACCEPT,
+            HeaderValue::from_str("application/json").unwrap(),
+        );
+
+        let distributor_client = reqwest::ClientBuilder::new()
+            .default_headers(distributor_headers)
             .http1_title_case_headers()
             .build()
             .unwrap();
@@ -162,6 +182,8 @@ pub async fn main() {
                 cloned_client.clone(),
                 ruler_client.clone(),
                 ruler_upstream_url.clone(),
+                distributor_client.clone(),
+                distributor_upstream_url.clone(),
                 Box::new(num_rules.clone()),
                 Box::new(tenants_detected.clone()),
                 (tracker_poll_interval_seconds * 1000 ).into()
