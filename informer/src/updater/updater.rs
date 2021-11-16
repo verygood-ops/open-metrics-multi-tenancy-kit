@@ -68,7 +68,7 @@ pub async fn updater(k8s_client: Client,
                                     group
                                 ).await;
                                 // Safe to unwrap atomic
-                                &num_rules.with_label_values(&[tenant_id.as_str()]).inc();
+                                let _ = &num_rules.with_label_values(&[tenant_id.as_str()]).inc();
 
                                 if k8s_idx >= 0 {
                                     // safe to unwrap since update came from resource

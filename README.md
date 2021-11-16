@@ -70,7 +70,8 @@ How to build
 Local:
 
 1) [Install Rust](https://doc.rust-lang.org/cargo/getting-started/installation.html)
-2) `cargo build`
+2) [Install protobuf-compiler](https://grpc.io/docs/protoc-installation/)
+3) `cargo build`
 
 In docker,
 
