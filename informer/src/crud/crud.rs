@@ -3,6 +3,7 @@ use log::{debug,error,info,warn};
 use reqwest::Client as RClient;
 use reqwest::{Response,Error};
 use serde::Deserialize;
+use sha1::{Sha1, Digest};
 
 use kube_metrics_mutli_tenancy_lib as kube_lib;
 use crate::rules::rules;
@@ -157,7 +158,8 @@ pub async fn create_or_update_k8s_resource(
                 cli.clone(), namespace);
 
             let resource_name = if not_found {
-                String::from("om-mt-k-ruler-src-") + &rule_group_name.replace("_", "-")
+                let hash = Sha1::digest(&rule_group_name.replace("_", "-"));
+                format!("{}-{:x}", tenant_id, hash)
             } else {
                 // It is safe to unwrap, since we just found this rule via discover_open_metrics()
                 let rule = found.clone().unwrap();
