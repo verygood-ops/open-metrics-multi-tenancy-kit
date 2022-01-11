@@ -148,7 +148,8 @@ pub async fn create_or_update_k8s_resource(
                     let (idx, group_named, _k8s_idx) =
                         rules::find_group_named(&groups_with_idx, &rule_group.name);
                     if group_named.is_some() {
-                        rule.spec.groups.insert(idx as usize, rule_group.clone());
+                        let index = idx as usize;
+                        rule.spec.groups[index] = rule_group.clone();
                         found = Some(rule);
                         break;
                     };
