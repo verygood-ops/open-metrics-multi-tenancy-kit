@@ -1,4 +1,5 @@
 use kube::{Api,Client,api::{Patch,PatchParams}};
+use kube::api::DeleteParams;
 use log::{debug,error,info,warn};
 use reqwest::Client as RClient;
 use reqwest::{Response,Error};
@@ -147,7 +148,8 @@ pub async fn create_or_update_k8s_resource(
                     let (idx, group_named, _k8s_idx) =
                         rules::find_group_named(&groups_with_idx, &rule_group.name);
                     if group_named.is_some() {
-                        rule.spec.groups.insert(idx as usize, rule_group.clone());
+                        let index = idx as usize;
+                        rule.spec.groups[index] = rule_group.clone();
                         found = Some(rule);
                         break;
                     };
@@ -190,6 +192,48 @@ pub async fn create_or_update_k8s_resource(
     };
 }
 
+// remove or update resource in k8s
+pub async fn remove_k8s_resource(
+    k8s_client: Client,
+    tenant_id: &String,
+    namespace: &String,
+    rule_group: kube_lib::GroupSpec
+) {
+    let cli = k8s_client.clone();
+    match kube_lib::discover_open_metrics_rules(cli.clone(), namespace).await {
+        Ok(rule_vec) => {
+            let rule_group_name = rule_group.name.clone();
+            for mut rule in rule_vec.iter().cloned().into_iter() {
+                if rule.spec.tenants.contains(tenant_id) {
+                    let mut groups_with_idx = Vec::new();
+                    for g in rule.spec.groups.iter().cloned().into_iter() {
+                        groups_with_idx.push((g, -1));
+                    };
+                    let (idx, group_named, _k8s_idx) =
+                        rules::find_group_named(&groups_with_idx, &rule_group.name);
+                    if group_named.is_some() {
+                        let resource_name = rule.metadata.name.clone().unwrap();
+                        let api : Api<kube_lib::OpenMetricsRule> = Api::namespaced(
+                            cli.clone(), namespace);
+
+                        if groups_with_idx.len() == 1 {
+                            remove_resource(&api, &resource_name).await;
+                        } else {
+                            rule.spec.groups.remove(idx as usize);
+                            resource_updated(&api, &resource_name, rule.clone()).await;
+                        }
+                        return;
+                    };
+                };
+            };
+
+            warn!("Rule group name [{}] not found", rule_group_name);
+        },
+        Err(msg) => {
+            error!("failed to discover current rule set: {}", msg);
+        }
+    };
+}
 
 // renew resource status
 pub async fn resource_updated(api: &Api<kube_lib::OpenMetricsRule>, resource_name: &String, mut open_metrics_rule: kube_lib::OpenMetricsRule) {
@@ -210,7 +254,26 @@ pub async fn resource_updated(api: &Api<kube_lib::OpenMetricsRule>, resource_nam
             info!("patched k8s resource: {}", serde_yaml::to_string(&resp).unwrap());
         },
         Err(e) => {
-            error!("failed to apply rule: {} because of {}", e, &resource_name);
+            error!("failed to apply rule: {} because of {:?}", &resource_name, e);
+        }
+    };
+}
+
+// remove resource
+pub async fn remove_resource(api: &Api<kube_lib::OpenMetricsRule>, resource_name: &String) {
+
+
+    match api.delete(
+        &resource_name.clone(),
+        &DeleteParams::default()
+    ).await {
+        Ok(result) => {
+            result
+                .map_left(|o| debug!("Deleting rule CRD: {:?}", o.status))
+                .map_right(|s| info!("Deleted rule CRD: {:?}", s));
+        },
+        Err(e) => {
+            error!("failed to delete rule: {} because of {:?}", &resource_name, e);
         }
     };
 }
