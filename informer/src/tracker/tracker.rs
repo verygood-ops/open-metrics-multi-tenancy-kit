@@ -81,11 +81,20 @@ pub async fn tracker(k8s_client: Client,
                                 };
                                 info!("done k8s updates: {} in total", updates_num);
 
+                                let mut removes_num = 0;
                                 for (tenant_id, remove_groups) in removals.clone().into_iter() {
-                                    for group in remove_groups {
+                                    for (group, _i) in remove_groups {
                                         info!("TRACKER: Ruler group {:?} is ABSENT from k8s {} tenant", group, tenant_id);
+                                        crud::remove_k8s_resource(
+                                            k8s_client.clone(),
+                                            &tenant_id,
+                                            &namespace,
+                                            group
+                                        ).await;
+                                        removes_num += 1;
                                     }
                                 };
+                                info!("done k8s removes: {} in total", removes_num);
                             },
                             Err(msg) => {
                                 error!("tracker: failed to discover k8s rules: {}", msg);
