@@ -269,8 +269,8 @@ pub async fn remove_resource(api: &Api<kube_lib::OpenMetricsRule>, resource_name
     ).await {
         Ok(result) => {
             result
-                .map_left(|o| println!("Deleting rule CRD: {:?}", o.status))
-                .map_right(|s| println!("Deleted rule CRD: {:?}", s));
+                .map_left(|o| debug!("Deleting rule CRD: {:?}", o.status))
+                .map_right(|s| info!("Deleted rule CRD: {:?}", s));
         },
         Err(e) => {
             error!("failed to delete rule: {} because of {:?}", &resource_name, e);
