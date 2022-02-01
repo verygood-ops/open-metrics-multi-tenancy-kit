@@ -55,6 +55,10 @@ struct OpenMetricsProxyArgs {
     #[argh(option, default = "String::from(\"tenant_id\")")]
     tenant_label_list: String,
 
+    /// disable full replication (--default-tenant-list will be ignored)
+    #[argh(switch)]
+    disable_full_replication: bool,
+
     /// comma-separated list of tenants id to replicate whole stream
     #[argh(option, default = "String::from(\"0\")")]
     default_tenant_list: String,
@@ -110,15 +114,21 @@ async fn main() {
     let k8s_poll_interval_seconds = args.kubernetes_poll_interval_seconds.clone().to_owned();
     let _parallel_request_per_load = args.max_parallel_request_per_load.clone().to_owned();
     let interface = args.interface.clone().to_owned();
+    let disable_full_replication = args.disable_full_replication.clone();
 
     let tenant_labels = tenant_label_list
         .split(",")
         .map(|s| s.to_string())
         .collect();
-    let replicate_to: Vec<String> = replicate_to_list
-        .split(",")
-        .map(|s| s.to_string())
-        .collect();
+
+    let replicate_to: Vec<String> = if disable_full_replication {
+        vec![]
+    } else {
+        replicate_to_list
+            .split(",")
+            .map(|s| s.to_string())
+            .collect()
+    };
 
     let allowed_tenants: Vec<String> = tenant_allow_list
         .split(",")
