@@ -1,59 +1,148 @@
-apiVersion: apiextensions.k8s.io/v1beta1
+apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: openmetricsrules.open-metrics.vgs.io
 spec:
   group: open-metrics.vgs.io
   names:
-    kind: OpenMetricsRule
     plural: openmetricsrules
+    singular: openmetricsrule
+    kind: OpenMetricsRule
+    listKind: OpenMetricsRuleList
   scope: Namespaced
-  validation:
-    openAPIV3Schema:
-      properties:
-        spec:
-          description: OpenMetricsRule CRD contains specification parameters for a
-            Rule.
+  versions:
+    - name: v2beta1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
           properties:
-            tenants:
-              type: array
-              items:
-                type: string
-            description:
-              type: string
-            groups:
-              description: Content of Open Metrics rule file
-              items:
-                description: RuleGroup is a list of sequentially evaluated recording
-                  and alerting rules.
-                properties:
-                  interval:
-                    type: string
-                  name:
-                    type: string
-                  rules:
-                    items:
-                      description: Open Metrics Rule describes an alerting or recording rule.
-                      properties:
-                        alert:
-                          type: string
-                        annotations:
+            spec:
+              type: object
+              description: >-
+                OpenMetricsRule CRD contains specification parameters for a
+                Rule.
+              properties:
+                description:
+                  type: string
+                groups:
+                  description: Content of Open Metrics rule file
+                  type: array
+                  items:
+                    type: object
+                    description: >-
+                      RuleGroup is a list of sequentially evaluated recording
+                      and alerting rules.
+                    required:
+                      - name
+                      - rules
+                    properties:
+                      interval:
+                        type: string
+                      name:
+                        type: string
+                      rules:
+                        type: array
+                        items:
                           type: object
-                        expr:
+                          description: >-
+                            Open Metrics Rule describes an alerting or recording
+                            rule.
+                          required:
+                            - expr
+                          properties:
+                            alert:
+                              type: string
+                            annotations:
+                              type: object
+                            expr:
+                              type: string
+                            for:
+                              type: string
+                            labels:
+                              type: object
+                            record:
+                              type: string
+                tenants:
+                  type: array
+                  items:
+                    type: string
+                routes:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - tenants
+                      - type
+                    properties:
+                      tenants:
+                        type: array
+                        items:
                           type: string
-                        for:
-                          type: string
-                        labels:
+                      type:
+                        type: string
+                      url:
+                        type: string
+    - name: v1
+      served: true
+      storage: false
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              description: >-
+                OpenMetricsRule CRD contains specification parameters for a
+                Rule.
+              required:
+                - tenants
+              properties:
+                description:
+                  type: string
+                groups:
+                  description: Content of Open Metrics rule file
+                  type: array
+                  items:
+                    type: object
+                    description: >-
+                      RuleGroup is a list of sequentially evaluated recording
+                      and alerting rules.
+                    required:
+                      - name
+                      - rules
+                    properties:
+                      interval:
+                        type: string
+                      name:
+                        type: string
+                      rules:
+                        type: array
+                        items:
                           type: object
-                        record:
-                          type: string
-                      required:
-                        - expr
-                    type: array
-                required:
-                  - name
-                  - rules
-              type: array
-          required:
-            - tenants
-  version: v1
+                          description: >-
+                            Open Metrics Rule describes an alerting or recording
+                            rule.
+                          required:
+                            - expr
+                          properties:
+                            alert:
+                              type: string
+                            annotations:
+                              type: object
+                            expr:
+                              type: string
+                            for:
+                              type: string
+                            labels:
+                              type: object
+                            record:
+                              type: string
+                tenants:
+                  type: array
+                  items:
+                    type: string
+  conversion:
+    strategy: None
+  preserveUnknownFields: true
