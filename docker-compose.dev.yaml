@@ -1,0 +1,110 @@
+version: "3.9"
+networks:
+  cortex:
+  prom:
+
+services:
+  consul:
+    profiles:
+      - cortex
+    image: consul
+    environment:
+      CONSUL_BIND_INTERFACE: eth0
+    networks:
+      - cortex
+  cortex:
+    profiles:
+      - cortex
+    image: quay.io/cortexproject/cortex:master-59791cd
+    command:
+      - '-config.file=/etc/single-process-config-blocks-local.yaml'
+      - '-ring.store=consul'
+      - '-consul.hostname=consul:8500'
+    volumes:
+      - "${PWD}/config/cortex/single-process-config-blocks-local.yaml:/etc/single-process-config-blocks-local.yaml"
+    ports:
+      - "9109:9009"
+    networks:
+      - cortex
+    depends_on:
+      - consul
+  cortex_grafana:
+    profiles:
+      - cortex
+    image: grafana/grafana
+    volumes:
+      - ${PWD}/config/cortex/grafana:/etc/grafana/provisioning
+    ports:
+      - '3100:3000'
+    networks:
+      - cortex
+
+  prometheus:
+    profiles:
+      - prom
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-remote-write-receiver'
+    ports:
+      - '9091:9090'
+    networks:
+      - prom
+  grafana:
+    profiles:
+      - prom
+    image: grafana/grafana
+    volumes:
+      - ${PWD}/config/grafana:/etc/grafana/provisioning
+    ports:
+      - '3001:3000'
+    networks:
+      - prom
+
+  tenant_a:
+    image: quay.io/prometheuscommunity/avalanche:main
+    profiles:
+      - tnt_a
+      - gen
+    ports:
+      - "9001"
+    command:
+      - '--metric-count=1'
+      - '--label-count=1'
+      - '--series-count=1'
+      - '--const-label=tenant_id=tenant_a'
+      - '--remote-url=http://host.docker.internal:19093'
+      - '--remote-write-interval=10s'
+
+  tenant_b:
+    image: quay.io/prometheuscommunity/avalanche:main
+    profiles:
+      - tnt_b
+      - gen
+    ports:
+      - "9001"
+    command:
+      - '--metric-count=1'
+      - '--label-count=1'
+      - '--series-count=1'
+      - '--const-label=tenant_id=tenant_b'
+      - '--remote-url=http://host.docker.internal:19093'
+      - '--remote-write-interval=10s'
+
+  tenant_c:
+    image: quay.io/prometheuscommunity/avalanche:main
+    profiles:
+      - tnt_c
+      - gen
+    ports:
+      - "9001"
+    command:
+      - '--metric-count=1'
+      - '--label-count=1'
+      - '--series-count=1'
+      - '--const-label=tenant_id=tenant_c'
+      - '--remote-url=http://host.docker.internal:19093'
+      - '--remote-write-interval=10s'
