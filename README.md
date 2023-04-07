@@ -1,6 +1,7 @@
 open-metrics-multi-tenancy-kit
 =================================
 
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/verygood-ops/open-metrics-multi-tenancy-kit/tree/master.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/verygood-ops/open-metrics-multi-tenancy-kit/tree/master)
 ![example workflow](https://github.com/verygood-ops/open-metrics-multi-tenancy-kit/actions/workflows/push.yml/badge.svg)
 
 
