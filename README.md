@@ -1,11 +1,30 @@
-open-metrics-multi-tenancy-kit
+open-metrics-multi-tenancy-kit(aka Injection Proxy)
 =================================
 
 ![example workflow](https://github.com/verygood-ops/open-metrics-multi-tenancy-kit/actions/workflows/push.yml/badge.svg)
 
-
-`open-metrics-multi-tenancy-kit` implements multi-tenancy for metrics collection and
+Injection Proxy implements multi-tenancy for metrics collection and
 rules management in Cortex environments, configured via `OpenMetricsRule` Kubernetes resource.
+
+Injection Proxy has two parts
+1) An informer is the service which is responsible for synchronizing Prometheus Rules state between Kubernetes and Ruler.
+2) A Proxy exposing GRPC socket, that listens for Prometheus Remote Write metrics
+
+Following is the flow
+1) Metrics Vector reads audit log from Kinesis stream vault-sanitized-data
+2) Metrics Vector uses grafana agent to ship metrics to Injection Proxy
+3) Injection Proxy stores metrics in cortex in default tenant and per tenant basis
+4) Metrics stored in default tenant is for internal purpose 
+5) Metrics stored per tenant is exposed out to each customer 
+
+Component Diagram: https://verygoodsecurity.atlassian.net/wiki/spaces/EN/pages/1002471427/What+is+Observability#Components-diagram
+
+Sequence Diagram: https://verygoodsecurity.atlassian.net/wiki/spaces/EN/pages/1002471427/What+is+Observability#Open-metrics-multi-tenancy-kit-(Open-MMT-kit)
+
+Metrics flow:  https://verygoodsecurity.atlassian.net/wiki/spaces/EN/pages/1002471427/What+is+Observability#Design
+
+Cortex end point: https://tenant.cortex.ops.verygood.systems/
+
 
 An example `OpenMetricsRule` is below.
 
@@ -39,6 +58,11 @@ spec:
             severity: critical
 ```
 
+## Code
+
+### Tech Stack
+- Rust 
+- Injection Proxy is deployed as OpenMetricsRule in external-metrics namespace: prod/logs cluster
 
 
 Metrics collection multi-tenancy
