@@ -8,14 +8,14 @@ rules management in Cortex environments, configured via `OpenMetricsRule` Kubern
 
 Injection Proxy has two parts
 1) An informer is the service which is responsible for synchronizing Prometheus Rules state between Kubernetes and Ruler.
-2) A proxy exposing GRPC socket, that listens for Prometheus Remote Write metrics
+2) A Proxy exposing GRPC socket, that listens for Prometheus Remote Write metrics
 
 Following is the flow
-1) Metrics Vector reads audit log from Kinesis stream vault log sanitized
+1) Metrics Vector reads audit log from Kinesis stream vault-sanitized-data
 2) Metrics Vector uses grafana agent to ship metrics to Injection Proxy
-3) Injection Proxy stores metrics in cortex in default tenant and per tenant
+3) Injection Proxy stores metrics in cortex in default tenant and per tenant basis
 4) Metrics stored in default tenant is for internal purpose 
-5) Metrics stored in metrics per tenant is exposed out to each customer 
+5) Metrics stored per tenant is exposed out to each customer 
 
 Component Diagram: https://verygoodsecurity.atlassian.net/wiki/spaces/EN/pages/1002471427/What+is+Observability#Components-diagram
 
@@ -62,7 +62,7 @@ spec:
 
 ### Tech Stack
 - Rust 
-- Injection Proxy  is deployed as OpenMetricsRule in external-metrics namespace?: prod/logs cluster
+- Injection Proxy is deployed as OpenMetricsRule in external-metrics namespace: prod/logs cluster
 
 
 Metrics collection multi-tenancy
